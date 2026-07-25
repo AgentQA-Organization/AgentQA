@@ -18,6 +18,17 @@ def studio_dir(repo_root: Path) -> Path:
     return Path(repo_root) / ".agentqa" / "studio"
 
 
+def ensure_studio_dir(repo_root: Path) -> Path:
+    """Create the mailbox dir with a self-ignoring .gitignore, so mailbox files
+    are never committed even when the browser posts before any agent attaches."""
+    d = studio_dir(repo_root)
+    d.mkdir(parents=True, exist_ok=True)
+    gi = d / ".gitignore"
+    if not gi.is_file():
+        gi.write_text("*\n", encoding="utf-8")
+    return d
+
+
 def _append_line(path: Path, rec: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(rec, ensure_ascii=False) + "\n"
@@ -32,6 +43,7 @@ def _append_line(path: Path, rec: Dict[str, Any]) -> None:
 
 def append_inbox(repo_root: Path, rec: Dict[str, Any]) -> Dict[str, Any]:
     protocol.validate(rec)
+    ensure_studio_dir(repo_root)
     _append_line(studio_dir(repo_root) / "inbox.jsonl", rec)
     return rec
 

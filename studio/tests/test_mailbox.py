@@ -12,6 +12,12 @@ def test_append_inbox_validates_and_writes(tmp_path):
     assert rec["flow_idea"] == "log in"
 
 
+def test_append_inbox_creates_gitignore(tmp_path):
+    mailbox.append_inbox(tmp_path, protocol.build_job("x"))
+    gi = mailbox.studio_dir(tmp_path) / ".gitignore"
+    assert gi.read_text().strip() == "*"
+
+
 def test_append_inbox_rejects_bad_record(tmp_path):
     with pytest.raises(protocol.ProtocolError):
         mailbox.append_inbox(tmp_path, {"v": 1, "id": "x", "ts": "t", "type": "job"})

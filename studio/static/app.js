@@ -185,6 +185,7 @@ loadMemory();
 // ---- Panel 3: Agent conversation ---------------------------------------
 const STAGES = ["map", "clarify", "explore", "identifiers", "build",
                 "verify", "write", "green", "review", "capture"];
+const seenRecordIds = new Set();
 
 function renderStepper(current) {
   const box = document.getElementById("stepper");
@@ -335,6 +336,10 @@ function renderCard(rec) {
 }
 
 function dispatch(rec) {
+  if (rec && rec.id) {
+    if (seenRecordIds.has(rec.id)) return;   // reconnect replays the outbox; render each record once
+    seenRecordIds.add(rec.id);
+  }
   if (rec.type === "progress") return appendProgress(rec);
   if (rec.type === "question") return renderCard(rec);
   if (rec.type === "result") return appendResult(rec);
