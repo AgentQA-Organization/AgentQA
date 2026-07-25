@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "inbox": {
+    "job": {"v": 1, "id": "j1", "ts": "2026-07-25T10:00:00Z", "type": "job", "flow_idea": "log in with valid credentials"},
+    "reply_form": {"v": 1, "id": "r1", "ts": "2026-07-25T10:01:00Z", "type": "reply", "reply_to": "q1", "answers": {"success": "lands on the home tab", "failure": "inline error under the field", "blockers": "none", "entry": "welcome screen"}},
+    "reply_build": {"v": 1, "id": "r2", "ts": "2026-07-25T10:05:00Z", "type": "reply", "reply_to": "q2", "decision": "built"},
+    "reply_review": {"v": 1, "id": "r3", "ts": "2026-07-25T10:09:00Z", "type": "reply", "reply_to": "q3", "decision": "approve", "note": null}
+  },
+  "outbox": {
+    "progress": {"v": 1, "id": "p1", "ts": "2026-07-25T10:00:05Z", "type": "progress", "text": "Indexing with CodeGraph…", "stage": "map"},
+    "question_clarify": {"v": 1, "id": "q1", "ts": "2026-07-25T10:00:30Z", "type": "question", "kind": "form", "subtype": "clarify", "prompt": "Confirm what this flow should prove", "questions": [{"qid": "success", "label": "What does success look like?", "kind": "text", "default": "lands on the home tab"}, {"qid": "failure", "label": "What does failure look like?", "kind": "text"}, {"qid": "blockers", "label": "Anything that could block the test?", "kind": "text"}, {"qid": "entry", "label": "Which entry point?", "kind": "choice", "options": ["welcome screen", "account tab"]}]},
+    "question_ask": {"v": 1, "id": "qa", "ts": "2026-07-25T10:02:00Z", "type": "question", "kind": "form", "subtype": "ask", "prompt": "A location permission prompt appeared.", "questions": [{"qid": "action", "label": "What should the test do?", "kind": "choice", "options": ["Allow", "Deny", "Dismiss"]}]},
+    "question_build": {"v": 1, "id": "q2", "ts": "2026-07-25T10:04:00Z", "type": "question", "kind": "confirm", "subtype": "build", "prompt": "Build & install the app onto the booted simulator, then confirm."},
+    "question_review": {"v": 1, "id": "q3", "ts": "2026-07-25T10:08:00Z", "type": "question", "kind": "review", "subtype": "review", "prompt": "Review the additions and the test.", "diff": "+ accessibilityIdentifier(\"login_submit_button\")", "test_files": [{"path": "AutomationTests/tests/test_login.py", "content": "def test_login():\n    ...\n"}]},
+    "result": {"v": 1, "id": "res1", "ts": "2026-07-25T10:10:00Z", "type": "result", "status": "green", "summary": "login test passing", "test_path": "AutomationTests/tests/test_login.py"},
+    "error": {"v": 1, "id": "e1", "ts": "2026-07-25T10:10:00Z", "type": "error", "text": "could not reach the simulator"}
+  },
+  "state": {"v": 1, "attached": true, "heartbeat_ts": "2026-07-25T10:08:30Z", "status": "waiting", "current_job_id": "j1", "awaiting": "q3", "job_cursor": "j1"}
+}
