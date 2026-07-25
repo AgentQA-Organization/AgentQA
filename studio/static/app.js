@@ -181,3 +181,199 @@ loadConfig();
 loadRig();
 loadTests();
 loadMemory();
+
+// ---- Panel 3: Agent conversation ---------------------------------------
+const STAGES = ["map", "clarify", "explore", "identifiers", "build",
+                "verify", "write", "green", "review", "capture"];
+
+function renderStepper(current) {
+  const box = document.getElementById("stepper");
+  const seq = STAGES.includes(current) ? STAGES : STAGES.concat([current]);
+  const idx = seq.indexOf(current);
+  box.innerHTML = "";
+  seq.forEach((s, i) => {
+    const cls = i < idx ? "done" : (i === idx ? "active" : "");
+    box.appendChild(el(`<span class="step ${cls}">${esc(s)}</span>`));
+  });
+}
+
+function logAppend(node) {
+  const log = document.getElementById("agent-log");
+  log.appendChild(node);
+  while (log.children.length > 500) log.removeChild(log.firstElementChild);
+  log.scrollTop = log.scrollHeight;
+}
+
+function appendProgress(rec) {
+  logAppend(el(`<div class="msg">${esc(rec.text)}</div>`));
+  if (rec.stage) renderStepper(rec.stage);
+}
+
+function appendResult(rec) {
+  const cls = rec.status === "green" ? "ok" : "bad";
+  const path = rec.test_path ? ` — ${esc(rec.test_path)}` : "";
+  logAppend(el(`<div class="msg card"><strong class="dot ${cls}">${esc(rec.status)}</strong> ${esc(rec.summary || "")}${path}</div>`));
+}
+
+function appendError(rec) {
+  logAppend(el(`<div class="msg card"><strong class="dot bad">error</strong> ${esc(rec.text)}</div>`));
+}
+
+async function sendReply(payload) {
+  await fetchJSON("/api/studio/reply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+function lockCard(card, summary) {
+  card.querySelectorAll("input,button,textarea").forEach((n) => { n.disabled = true; });
+  card.appendChild(el(`<div class="muted locked">↳ ${esc(summary)}</div>`));
+}
+
+function renderForm(rec, card) {
+  const fields = {};
+  (rec.questions || []).forEach((q) => {
+    const wrap = el(`<div class="field"><label>${esc(q.label)}</label></div>`);
+    if (q.kind === "choice") {
+      const choices = el(`<div class="choices"></div>`);
+      (q.options || []).forEach((opt) => {
+        choices.appendChild(el(
+          `<label class="opt"><input type="radio" name="${esc(rec.id + q.qid)}" value="${esc(opt)}"> ${esc(opt)}</label>`));
+      });
+      wrap.appendChild(choices);
+    } else {
+      wrap.appendChild(el(`<input type="text" value="${esc(q.default || "")}">`));
+    }
+    card.appendChild(wrap);
+    fields[q.qid] = { q, wrap };
+  });
+  const submit = el(`<button>Submit</button>`);
+  submit.onclick = async () => {
+    const answers = {};
+    for (const [qid, f] of Object.entries(fields)) {
+      if (f.q.kind === "choice") {
+        const checked = f.wrap.querySelector("input:checked");
+        answers[qid] = checked ? checked.value : "";
+      } else {
+        answers[qid] = f.wrap.querySelector("input").value;
+      }
+    }
+    await sendReply({ reply_to: rec.id, answers });
+    lockCard(card, "answered");
+  };
+  card.appendChild(submit);
+}
+
+function renderConfirm(rec, card) {
+  const btn = el(`<button>I've built &amp; installed</button>`);
+  btn.onclick = async () => {
+    await sendReply({ reply_to: rec.id, decision: "built" });
+    lockCard(card, "built");
+  };
+  card.appendChild(btn);
+}
+
+function renderReview(rec, card) {
+  card.appendChild(el(`<pre class="diffbox">${esc(rec.diff || "")}</pre>`));
+  (rec.test_files || []).forEach((f) => {
+    card.appendChild(el(`<div class="muted">${esc(f.path)}</div>`));
+    card.appendChild(el(`<pre class="diffbox">${esc(f.content)}</pre>`));
+  });
+  const note = el(`<textarea placeholder="reason (if rejecting)"></textarea>`);
+  note.style.display = "none";
+  const approve = el(`<button>Approve</button>`);
+  const reject = el(`<button>Reject</button>`);
+  approve.onclick = async () => {
+    await sendReply({ reply_to: rec.id, decision: "approve" });
+    lockCard(card, "approved");
+  };
+  reject.onclick = async () => {
+    if (note.style.display === "none") { note.style.display = "block"; return; }
+    await sendReply({ reply_to: rec.id, decision: "reject", note: note.value });
+    lockCard(card, "rejected");
+  };
+  const actions = el(`<div class="card-actions"></div>`);
+  actions.appendChild(approve);
+  actions.appendChild(reject);
+  card.appendChild(note);
+  card.appendChild(actions);
+}
+
+function renderCard(rec) {
+  const card = el(`<div class="msg card"></div>`);
+  card.appendChild(el(`<div class="prompt">${esc(rec.prompt || "")}</div>`));
+  if (rec.kind === "form") renderForm(rec, card);
+  else if (rec.kind === "confirm") renderConfirm(rec, card);
+  else if (rec.kind === "review") renderReview(rec, card);
+  logAppend(card);
+}
+
+function dispatch(rec) {
+  if (rec.type === "progress") return appendProgress(rec);
+  if (rec.type === "question") return renderCard(rec);
+  if (rec.type === "result") return appendResult(rec);
+  if (rec.type === "error") return appendError(rec);
+}
+
+function connectStream() {
+  const es = new EventSource("/api/studio/stream");
+  es.onmessage = (e) => {
+    let rec;
+    try { rec = JSON.parse(e.data); } catch (_) { return; }
+    dispatch(rec);
+  };
+  es.onerror = () => { /* browser auto-reconnects; the outbox replays on reconnect */ };
+}
+
+async function pollAgentState() {
+  const box = document.getElementById("agent-status");
+  try {
+    const s = await fetchJSON("/api/studio/state");
+    const stale = s.heartbeat_ts && (Date.now() - Date.parse(s.heartbeat_ts) > 60000);
+    if (!s.attached) {
+      box.textContent = "No agent connected — run /agentqa-studio in Claude Code";
+      box.className = "muted";
+    } else if (s.status === "waiting") {
+      box.textContent = stale
+        ? "Agent waiting (no heartbeat — may have disconnected)"
+        : "Agent attached — waiting on you";
+      box.className = stale ? "dot bad" : "dot ok";
+    } else if (s.status === "running") {
+      box.textContent = "Agent working…";
+      box.className = "dot ok";
+    } else {
+      box.textContent = "Agent attached — idle";
+      box.className = "dot ok";
+    }
+  } catch (err) {
+    box.textContent = `agent state error: ${err.message}`;
+  }
+}
+
+async function startJob() {
+  const ideaEl = document.getElementById("job-idea");
+  const idea = ideaEl.value.trim();
+  if (!idea) return;
+  const btn = document.getElementById("job-start");
+  btn.disabled = true;
+  try {
+    await fetchJSON("/api/studio/job", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ flow_idea: idea }),
+    });
+    ideaEl.value = "";
+    logAppend(el(`<div class="msg muted">▸ queued: ${esc(idea)}</div>`));
+  } catch (err) {
+    logAppend(el(`<div class="msg card"><strong class="dot bad">error</strong> ${esc(err.message)}</div>`));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("job-start").onclick = startJob;
+pollAgentState();
+setInterval(pollAgentState, 4000);
+connectStream();

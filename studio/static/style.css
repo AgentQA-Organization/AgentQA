@@ -20,3 +20,21 @@ button { font: inherit; padding: 3px 10px; border: 1px solid var(--line); border
 .mem-group { margin-bottom: 8px; } .mem-group a { display: inline-block; margin: 0 8px 4px 0; }
 button:disabled { opacity: .5; cursor: default; }
 .mem-actions { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+#agent-panel { grid-column: 1 / -1; }
+.job-starter { display: flex; gap: 8px; margin: 8px 0; }
+.job-starter input { flex: 1; font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.stepper { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.step { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
+.step.done { color: var(--ok); border-color: var(--ok); }
+.step.active { color: var(--fg); border-color: var(--fg); font-weight: 600; }
+.agent-log { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow: auto; }
+.msg { padding: 2px; }
+.card { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.card .prompt { margin-bottom: 8px; }
+.field { margin: 6px 0; display: flex; flex-direction: column; gap: 4px; }
+.field input[type=text] { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.choices { display: flex; gap: 12px; flex-wrap: wrap; }
+.card-actions { display: flex; gap: 8px; margin-top: 8px; }
+.diffbox { background: #0c0d10; color: #d6d6d6; padding: 10px; border-radius: 6px; max-height: 260px; overflow: auto; white-space: pre; }
+.card textarea { width: 100%; font: inherit; margin-top: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.locked { margin-top: 6px; }
