@@ -9,7 +9,7 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from studio import config as cfgmod
-from studio import memory_view, rig, runner
+from studio import mailbox, memory_view, protocol, rig, runner
 
 STATIC = Path(__file__).parent / "static"
 
@@ -75,6 +75,10 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
                     return self._json({"lint": memory_view.lint(repo_root, memory_scripts)})
                 if u.path == "/api/run/stream":
                     return self._sse(q.get("id", [""])[0])
+                if u.path == "/api/studio/state":
+                    return self._json(mailbox.read_state(repo_root))
+                if u.path == "/api/studio/stream":
+                    return self._sse_outbox()
                 return self._json({"error": "not found"}, 404)
             except FileNotFoundError as e:
                 return self._json({"error": "config missing: %s" % e}, 500)
@@ -100,6 +104,24 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
                         repo_root, s["test_dir"], target, payload.get("env", {}),
                     )
                     return self._json({"run_id": rid})
+                if u.path == "/api/studio/job":
+                    length = int(self.headers.get("Content-Length", 0) or 0)
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                    if not isinstance(payload, dict) or not payload.get("flow_idea"):
+                        return self._json({"error": "flow_idea required"}, 400)
+                    st = mailbox.read_state(repo_root)
+                    if st.get("status") in ("running", "waiting"):
+                        return self._json({"error": "a job is already running"}, 409)
+                    rec = mailbox.append_inbox(repo_root, protocol.build_job(payload["flow_idea"]))
+                    return self._json({"ok": True, "id": rec["id"]})
+                if u.path == "/api/studio/reply":
+                    length = int(self.headers.get("Content-Length", 0) or 0)
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                    if not isinstance(payload, dict) or not payload.get("reply_to"):
+                        return self._json({"error": "reply_to required"}, 400)
+                    reply_to = payload.pop("reply_to")
+                    rec = mailbox.append_inbox(repo_root, protocol.build_reply(reply_to, **payload))
+                    return self._json({"ok": True, "id": rec["id"]})
                 return self._json({"error": "not found"}, 404)
             except FileNotFoundError as e:
                 return self._json({"error": "config missing: %s" % e}, 500)
@@ -121,6 +143,21 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
             except Exception:
                 # headers already sent — a client disconnect (BrokenPipeError /
                 # ConnectionResetError) or any streaming error just stops the stream.
+                return
+
+        def _sse_outbox(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            try:
+                for rec in mailbox.tail_outbox(repo_root):
+                    if rec is None:
+                        self.wfile.write(b": ping\n\n")
+                    else:
+                        self.wfile.write(("data: %s\n\n" % json.dumps(rec)).encode())
+                    self.wfile.flush()
+            except Exception:
                 return
 
     return ThreadingHTTPServer(("127.0.0.1", port), Handler)

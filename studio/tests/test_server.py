@@ -134,3 +134,59 @@ def test_memory_lint_endpoint_none_without_scripts(live_server):
     status, body = _get(live_server, "/api/memory/lint")
     assert status == 200
     assert json.loads(body)["lint"] is None
+
+
+def _post(base, path, obj):
+    data = json.dumps(obj).encode()
+    req = urllib.request.Request(
+        base + path, data=data, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return r.status, json.loads(r.read().decode())
+
+
+def _studio_dir(tmp):
+    from studio import mailbox
+    return mailbox.studio_dir(tmp)
+
+
+def test_studio_state_default(live_server):
+    status, body = _get(live_server, "/api/studio/state")
+    assert status == 200
+    assert json.loads(body)["attached"] is False
+
+
+def test_studio_job_appends_to_inbox(live_server, tmp_path):
+    status, body = _post(live_server, "/api/studio/job", {"flow_idea": "log in"})
+    assert status == 200 and body["ok"] is True
+    inbox = (_studio_dir(tmp_path) / "inbox.jsonl").read_text()
+    assert '"type": "job"' in inbox and "log in" in inbox
+
+
+def test_studio_job_409_when_running(live_server, tmp_path):
+    d = _studio_dir(tmp_path)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "state.json").write_text('{"v":1,"attached":true,"status":"running"}')
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _post(live_server, "/api/studio/job", {"flow_idea": "x"})
+    assert exc.value.code == 409
+
+
+def test_studio_reply_appends(live_server, tmp_path):
+    status, body = _post(
+        live_server, "/api/studio/reply", {"reply_to": "q1", "decision": "built"})
+    assert status == 200
+    inbox = (_studio_dir(tmp_path) / "inbox.jsonl").read_text()
+    assert '"type": "reply"' in inbox and '"reply_to": "q1"' in inbox
+
+
+def test_studio_stream_replays_outbox(live_server, tmp_path):
+    d = _studio_dir(tmp_path)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "outbox.jsonl").write_text('{"type":"progress","text":"hi"}\n')
+    with urllib.request.urlopen(live_server + "/api/studio/stream", timeout=5) as r:
+        for _ in range(20):
+            line = r.readline().decode()
+            if line.startswith("data:"):
+                assert '"text":"hi"' in line or '"text": "hi"' in line
+                return
+    assert False, "no data event received"
