@@ -41,3 +41,15 @@ def test_read_inbox_parses_lines(tmp_path):
     sc.append_line(sc.studio_dir(tmp_path) / "inbox.jsonl", {"type": "job", "id": "j1"})
     sc.append_line(sc.studio_dir(tmp_path) / "inbox.jsonl", {"type": "reply", "id": "r1"})
     assert [r["type"] for r in sc.read_inbox(tmp_path)] == ["job", "reply"]
+
+
+def test_write_before_attach_creates_gitignore(tmp_path):
+    # Calling post_outbox without prior attach should create .gitignore
+    sc.post_outbox(tmp_path, sc.record("progress", text="x"))
+    assert (sc.studio_dir(tmp_path) / ".gitignore").read_text().strip() == "*"
+
+
+def test_write_state_before_attach_creates_gitignore(tmp_path):
+    # Calling write_state without prior attach should create .gitignore
+    sc.write_state(tmp_path, status="running")
+    assert (sc.studio_dir(tmp_path) / ".gitignore").read_text().strip() == "*"

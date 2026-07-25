@@ -17,6 +17,16 @@ def studio_dir(repo_root):
     return Path(repo_root) / ".agentqa" / "studio"
 
 
+def ensure_mailbox(repo_root):
+    """Ensure mailbox dir exists with .gitignore = "*"; called before every write."""
+    d = studio_dir(repo_root)
+    d.mkdir(parents=True, exist_ok=True)
+    gi = d / ".gitignore"
+    if not gi.is_file():
+        gi.write_text("*\n", encoding="utf-8")
+    return d
+
+
 def new_id():
     return uuid.uuid4().hex
 
@@ -46,6 +56,7 @@ def append_line(path, rec):
 
 
 def post_outbox(repo_root, rec):
+    ensure_mailbox(repo_root)
     append_line(studio_dir(repo_root) / "outbox.jsonl", rec)
     return rec
 
@@ -83,8 +94,7 @@ def write_state(repo_root, **updates):
     state["v"] = PROTOCOL_VERSION
     state.setdefault("attached", True)
     state["heartbeat_ts"] = now_ts()
-    d = studio_dir(repo_root)
-    d.mkdir(parents=True, exist_ok=True)
+    d = ensure_mailbox(repo_root)
     (d / "state.json").write_text(
         json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     return state
