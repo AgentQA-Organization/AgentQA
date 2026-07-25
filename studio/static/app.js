@@ -251,17 +251,23 @@ function renderForm(rec, card) {
   });
   const submit = el(`<button>Submit</button>`);
   submit.onclick = async () => {
-    const answers = {};
-    for (const [qid, f] of Object.entries(fields)) {
-      if (f.q.kind === "choice") {
-        const checked = f.wrap.querySelector("input:checked");
-        answers[qid] = checked ? checked.value : "";
-      } else {
-        answers[qid] = f.wrap.querySelector("input").value;
+    submit.disabled = true;
+    try {
+      const answers = {};
+      for (const [qid, f] of Object.entries(fields)) {
+        if (f.q.kind === "choice") {
+          const checked = f.wrap.querySelector("input:checked");
+          answers[qid] = checked ? checked.value : "";
+        } else {
+          answers[qid] = f.wrap.querySelector("input").value;
+        }
       }
+      await sendReply({ reply_to: rec.id, answers });
+      lockCard(card, "answered");
+    } catch (err) {
+      card.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
+      submit.disabled = false;
     }
-    await sendReply({ reply_to: rec.id, answers });
-    lockCard(card, "answered");
   };
   card.appendChild(submit);
 }
@@ -269,8 +275,14 @@ function renderForm(rec, card) {
 function renderConfirm(rec, card) {
   const btn = el(`<button>I've built &amp; installed</button>`);
   btn.onclick = async () => {
-    await sendReply({ reply_to: rec.id, decision: "built" });
-    lockCard(card, "built");
+    btn.disabled = true;
+    try {
+      await sendReply({ reply_to: rec.id, decision: "built" });
+      lockCard(card, "built");
+    } catch (err) {
+      card.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
+      btn.disabled = false;
+    }
   };
   card.appendChild(btn);
 }
@@ -286,13 +298,25 @@ function renderReview(rec, card) {
   const approve = el(`<button>Approve</button>`);
   const reject = el(`<button>Reject</button>`);
   approve.onclick = async () => {
-    await sendReply({ reply_to: rec.id, decision: "approve" });
-    lockCard(card, "approved");
+    approve.disabled = reject.disabled = true;
+    try {
+      await sendReply({ reply_to: rec.id, decision: "approve" });
+      lockCard(card, "approved");
+    } catch (err) {
+      card.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
+      approve.disabled = reject.disabled = false;
+    }
   };
   reject.onclick = async () => {
     if (note.style.display === "none") { note.style.display = "block"; return; }
-    await sendReply({ reply_to: rec.id, decision: "reject", note: note.value });
-    lockCard(card, "rejected");
+    approve.disabled = reject.disabled = true;
+    try {
+      await sendReply({ reply_to: rec.id, decision: "reject", note: note.value });
+      lockCard(card, "rejected");
+    } catch (err) {
+      card.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
+      approve.disabled = reject.disabled = false;
+    }
   };
   const actions = el(`<div class="card-actions"></div>`);
   actions.appendChild(approve);
