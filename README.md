@@ -1,11 +1,13 @@
 # AgentQA — agent-driven mobile UI test automation skills
 
-Two [Agent Skills](https://agentskills.io) that let an AI coding agent **set up,
+Three [Agent Skills](https://agentskills.io) that let an AI coding agent **set up,
 write, and run Appium UI tests** for a mobile app — **iOS or Android** — by
 exploring the *real* running app, adding accessibility identifiers additively,
 remembering what it learns, and keeping humans at the build and review
 checkpoints. [`agentqa-init`](skills/agentqa-init/) sets the machine and repo up,
-and [`agentqa-write-test`](skills/agentqa-write-test/) does the testing work.
+[`agentqa-write-test`](skills/agentqa-write-test/) does the testing work, and
+[`agentqa-studio`](skills/agentqa-studio/) puts a local web dashboard in front of
+it so a test can be written and its checkpoints answered from the browser.
 
 One flow, two platforms: the same 0–9 flow, checkpoints, and memory model drive
 both, selected by a single `platform:` line in the config. iOS runs on the
@@ -38,8 +40,9 @@ an emulator or device) + a JDK (macOS or Linux). Pinned tool versions live in
 ## Install
 
 **Claude Code (preferred):** register this repo as a plugin marketplace, then
-install — both `agentqa-init` and `agentqa-write-test` are auto-discovered from
-[`skills/`](skills/) via the [`.claude-plugin/`](.claude-plugin/) manifest:
+install — `agentqa-init`, `agentqa-write-test`, and `agentqa-studio` are
+auto-discovered from [`skills/`](skills/) via the
+[`.claude-plugin/`](.claude-plugin/) manifest:
 
 ```bash
 claude plugin marketplace add https://github.com/TunNguyen-25/AgentQA
@@ -95,7 +98,7 @@ harness's skills directory. Flags:
 (`.codex-plugin/`, `.cursor-plugin/`) pointing at the shared `skills/`, and Codex
 is also a native `install.sh --harness codex` target (raw-copy into
 `.agents/skills/`). For any other harness, `install.sh` prints where to place the
-`agentqa-init/` and `agentqa-write-test/` folders. Because every skill is plain
+`agentqa-init/`, `agentqa-write-test/`, and `agentqa-studio/` folders. Because every skill is plain
 [Agent Skills](https://agentskills.io) `SKILL.md`, the same `skills/` works across
 harnesses — only the install path differs. Per-harness plugin marketplaces are
 still maturing, so `install.sh` stays the guaranteed path.
@@ -111,7 +114,7 @@ still maturing, so `install.sh` stays the guaranteed path.
 
 ---
 
-## The two skills
+## The three skills
 
 Each skill owns one job and is invoked directly. They share the host repo's
 `.agentqa/` directory, not each other's internals.
@@ -120,9 +123,11 @@ Each skill owns one job and is invoked directly. They share the host repo's
 |---|---|---|
 | **`agentqa-init`** | `/agentqa-init setup` · `/agentqa-init init` | Machine toolchain (install + validate) and per-repo configuration: `.agentqa/config.yml`, the pytest scaffold, and an empty `.agentqa/memory/` store. Run once per machine, once per repo. |
 | **`agentqa-write-test`** | `/agentqa-write-test <idea>` | Everything at test time: clarify → explore the real app → add identifiers → verify → write → **run until green**. Owns the behavioral-memory schema and the memory scripts; runs everything inline, no sub-agents. |
+| **`agentqa-studio`** | `/agentqa-studio` | AgentQA Studio: a local web dashboard (the repo-root `studio/` daemon) plus a connector that attaches a live agent to it. Runs the `agentqa-write-test` flow unchanged and routes its clarify / build / review checkpoints to browser cards. |
 
 `agentqa-init` has two subcommands — `setup` (alias `install`) and `init` (alias
-`config`); `agentqa-write-test` takes free-text arguments.
+`config`); `agentqa-write-test` takes free-text arguments; `agentqa-studio` takes
+none — invoke it to attach and drive test-writing from the dashboard.
 
 ### `/agentqa-write-test <idea>`
 
@@ -345,11 +350,16 @@ skills/
 │   ├── assets/           # config template, test-suite scaffold (platform-dispatched conftest),
 │   │                     #   memory scaffold, MCP manifest
 │   └── tests/            # scaffold (conftest reset, runbook) tests
-└── agentqa-write-test/   # the test-time flow, self-contained
-    ├── SKILL.md          # the 0–9 flow + the green loop (iOS inline, Android delta linked)
-    ├── references/       # clarify.md, memory-model.md (THE store schema), android.md (platform delta)
-    ├── scripts/          # memory_common.py (schema), memory-write.py, memory-index.py, memory-lint.py
-    └── tests/            # memory store tests
+├── agentqa-write-test/   # the test-time flow, self-contained
+│   ├── SKILL.md          # the 0–9 flow + the green loop (iOS inline, Android delta linked)
+│   ├── references/       # clarify.md, memory-model.md (THE store schema), android.md (platform delta)
+│   ├── scripts/          # memory_common.py (schema), memory-write.py, memory-index.py, memory-lint.py
+│   └── tests/            # memory store tests
+└── agentqa-studio/       # the browser connector (transport adapter over agentqa-write-test)
+    ├── SKILL.md          # attach → watch mailbox → run write-test → route checkpoints to cards
+    ├── scripts/          # studio_common.py (protocol), studio-attach/-wait/-post/-detach.py
+    └── tests/            # protocol + script tests (validated against studio/protocol_v1.json)
+studio/                   # AgentQA Studio daemon (M1 viewer + M2 mailbox): stdlib http.server + vanilla-JS UI
 agentqa-write-test-workspace/  # eval harness: mock app repo, PATH shims, graders (dev-only)
 install.sh                # the cross-harness installer (raw-copy, for harnesses without marketplace support)
 ```
@@ -359,7 +369,7 @@ install.sh                # the cross-harness installer (raw-copy, for harnesses
 Releases are git-tagged with SemVer (`v1.0.0`). The plugin version lives in
 [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json), and each skill carries
 its own in its `SKILL.md` frontmatter (`metadata.agentqa-init-version`,
-`metadata.agentqa-write-test-version`). Pin the installer to a release with
+`metadata.agentqa-write-test-version`, `metadata.agentqa-studio-version`). Pin the installer to a release with
 `--ref v<x.y.z>`.
 
 ## License
