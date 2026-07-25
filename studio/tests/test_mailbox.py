@@ -29,6 +29,19 @@ def test_read_state_reads_file(tmp_path):
     assert mailbox.read_state(tmp_path)["status"] == "running"
 
 
+def test_read_state_default_when_corrupt(tmp_path):
+    d = mailbox.studio_dir(tmp_path)
+    d.mkdir(parents=True)
+    (d / "state.json").write_text('{"v":1,"attached":true')  # truncated/invalid JSON
+    st = mailbox.read_state(tmp_path)
+    assert st["attached"] is False
+    assert st["status"] == "idle"
+    assert st["current_job_id"] is None
+    assert st["awaiting"] is None
+    assert st["heartbeat_ts"] is None
+    assert st["job_cursor"] is None
+
+
 def test_read_outbox_skips_partial_trailing_line(tmp_path):
     d = mailbox.studio_dir(tmp_path)
     d.mkdir(parents=True)

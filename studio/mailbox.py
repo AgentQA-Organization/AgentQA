@@ -55,16 +55,21 @@ def read_outbox(repo_root: Path) -> List[Dict[str, Any]]:
     return out
 
 
+def _default_state() -> Dict[str, Any]:
+    """Return the default idle/detached state dict."""
+    return {"v": protocol.PROTOCOL_VERSION, "attached": False, "status": "idle",
+            "current_job_id": None, "awaiting": None, "heartbeat_ts": None,
+            "job_cursor": None}
+
+
 def read_state(repo_root: Path) -> Dict[str, Any]:
     path = studio_dir(repo_root) / "state.json"
     if not path.is_file():
-        return {"v": protocol.PROTOCOL_VERSION, "attached": False, "status": "idle",
-                "current_job_id": None, "awaiting": None, "heartbeat_ts": None,
-                "job_cursor": None}
+        return _default_state()
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except ValueError:
-        return {"v": protocol.PROTOCOL_VERSION, "attached": False, "status": "idle"}
+        return _default_state()
 
 
 def tail_outbox(repo_root: Path, poll: float = 0.5) -> Iterator[Optional[Dict[str, Any]]]:
