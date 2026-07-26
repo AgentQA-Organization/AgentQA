@@ -202,6 +202,7 @@ async function runTests(target) {
       badge.className = "exit-badge " + (code === "0" ? "ok" : "bad");
       es.close();
       activeRun = null;
+      setRunButtonsDisabled(false);
       setTabDot("tests", null);
       document.querySelectorAll(".file-row").forEach((r) => r.classList.remove("running"));
       loadTests();
