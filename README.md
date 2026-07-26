@@ -144,6 +144,31 @@ tests and it offers **pytest-only (lean)** — just the pytest output — or **f
 diagnosis**, which recalls the `failures/` library, diagnoses a failure inline
 from the saved artifacts, and captures new signatures.
 
+### `/agentqa-studio` — the dashboard
+
+`/agentqa-studio` opens a local web dashboard (`http://127.0.0.1:7332/`) and
+attaches the agent to it, so a test can be written and its checkpoints answered
+from the **browser** instead of the terminal. It runs the **same**
+`agentqa-write-test` flow — only the three human checkpoints (clarify / build /
+review) and any device permission prompts become clickable cards. Type "Write a
+test for ___" in the dashboard (or in chat), watch progress stream, and answer the
+cards as they appear.
+
+The daemon half — `agentqa-studio` on your `PATH` — also runs on its own with **no
+agent attached**: a read-only viewer of the rig, the test suite, and the memory
+store. Set `AGENTQA_STUDIO_PORT` to change the port.
+
+> **Token cost.** Because every progress update and checkpoint round-trips through
+> a file "mailbox," a Studio run costs somewhat **more** tokens than the same
+> `/agentqa-write-test` run in the terminal — the extra is mostly proportional to
+> how long you take to answer the cards (the agent polls the mailbox while it
+> waits, whereas the terminal skill pays nothing to wait). Use the terminal skill
+> when you're optimizing token spend; use Studio when the visibility and
+> click-to-answer UX are worth it.
+
+Full walkthrough — the two halves, the mailbox, activation, and the flow — in
+**[`docs/agentqa-studio.md`](docs/agentqa-studio.md)**.
+
 ---
 
 ## The toolchain
