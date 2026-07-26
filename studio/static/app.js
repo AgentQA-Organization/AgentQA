@@ -85,15 +85,35 @@ async function loadRig() {
   const box = document.getElementById("rig");
   try {
     const r = await fetchJSON("/api/rig");
+    const items = [
+      ["simulator", "Simulator booted"],
+      ["app_installed", "App installed"],
+      ["appium", "Appium running"],
+      ["codegraph", "CodeGraph indexed"],
+    ];
     box.innerHTML = "";
-    const labels = { simulator: "Simulator", app_installed: "App", appium: "Appium", codegraph: "CodeGraph" };
-    for (const key of Object.keys(labels)) {
-      const ok = r[key];
-      box.appendChild(el(`<span class="dot ${ok ? "ok" : "bad"}">${ok ? "●" : "○"} ${labels[key]}</span>`));
+    let ready = 0;
+    for (const [key, label] of items) {
+      const ok = !!r[key];
+      if (ok) ready++;
+      box.appendChild(el(
+        `<div class="card rig-cell"><div class="rig-ico ${ok ? "ok" : "bad"}">${ok ? SVG_CHECK : SVG_WARN}</div>` +
+        `<div><div class="label">${esc(label)}</div><div class="state ${ok ? "ok" : "bad"}">${ok ? "OK" : "Not ready"}</div></div></div>`));
     }
+    renderRigSummary(items.length, ready);
+    setTabDot("rig", ready < items.length ? "warn" : null);
   } catch (err) {
     box.textContent = `rig error: ${err.message}`;
   }
+}
+
+function renderRigSummary(total, ready) {
+  const sum = document.getElementById("rig-summary");
+  const not = total - ready;
+  sum.innerHTML = "";
+  sum.appendChild(el(`<span class="legend"><span class="dot" style="background:var(--accent)"></span>${ready} ready</span>`));
+  sum.appendChild(el(`<span class="legend"><span class="dot" style="background:var(--danger)"></span>${not} not ready</span>`));
+  if (not > 0) sum.appendChild(el(`<span class="rig-warn">⚠ some checks not ready — identifiers may be incomplete</span>`));
 }
 
 function setRunButtonsDisabled(disabled) {
