@@ -58,6 +58,24 @@ things confirmed against the running app graduate into `flows/` and `screens/`.
 This is the whole reason for the split: everything in layer 1 was earned by
 driving the app, so a later run can trust it as a map.
 
+### What each note captures
+
+Notes are plain Markdown — frontmatter plus one fact per line
+(`- [category] fact #flow`). No database, no server, no link graph: the `#flow`
+tag is what ties a screen or a failure to the flows it belongs to. The exact line
+format lives in [`memory-model.md`](../skills/agentqa-write-test/references/memory-model.md);
+this is the overview of where each kind of note lives.
+
+| Folder / file | One note per | Captures |
+|---|---|---|
+| `flows/` | user flow | navigation path, **the assertion that matters**, edge cases, which steps are native vs. web |
+| `screens/` | screen | native-or-web, the **identifier map** (logical name → where it's set + when it was last verified), quirks (e.g. "submit button sits under the keyboard") |
+| `failures/` | phantom/flaky signature | symptom → cause → remedy; a shared library across flows |
+| `env.md` | (single file) | build-policy rationale, credential env-var names, device/simulator gotchas |
+| `index.md` | (generated) | compact view rebuilt from the notes — **gitignored**, never hand-edited |
+| `.session-requirement.md` | (ephemeral, per session) | what you asked for this session: success/failure criteria, blockers |
+| `.run-checkpoint.md` | (ephemeral, per run) | the in-flight run's state across the build pause |
+
 ## How retrieval works
 
 At the start of a run:
@@ -141,6 +159,37 @@ answering less and less:
 `memory-lint.py` runs the same checks over the whole store, plus frontmatter and
 tagging. `/agentqa-init init --check` runs it for you.
 
+## The intent layer (optional)
+
+Layer 4 in the diagram above. Most of what a test needs is discoverable: the code
+says how navigation works, the live app says what's on screen. The one thing
+neither can tell you is **what should count as passing** — which is why the skill
+asks about success, failure, and blockers on every run.
+
+Teams often already answered that, in an SRD, a PM scenario, a user-flow doc.
+Point `docs:` in `.agentqa/config.yml` at those files (local paths/globs) and
+`agentqa-write-test` will read them to **pre-fill its clarify round** — proposing
+"the spec says success is landing on the home tab bar; still right?" instead of
+asking you to retype what you already wrote — and to **aim its exploration**.
+
+They are **intent, not truth**, and that distinction is the whole design:
+
+- A spec describes what the app was *meant* to do. It goes stale, it gets overtaken
+  by a build. So it ranks *below* the source code, which the skill already treats
+  as unreliable: **live hierarchy > memory > code > docs** (see
+  [`architecture.md`](architecture.md#trust-order)).
+- Docs **never skip a clarify question** — they change its form from blank to
+  confirm-or-correct. You still decide what the test must prove.
+- A claim read from a doc but never seen live stays in the session's scratch file
+  (layer 3) and **is deleted with it**. It never enters `flows/`/`screens/`,
+  because that store is what later runs trust as a map.
+- When a doc and the build disagree, the build wins — and the skill **tells you
+  about the gap**, which is often the more useful finding.
+- The skill only ever **reads** these files.
+
+No `docs:` block is the normal case, and the skill never asks you for one. The
+`docs:` field itself is documented in [`configuration.md`](configuration.md).
+
 ## In one paragraph
 
 Four layers: permanent knowledge, a disposable index over it, one session's
@@ -149,3 +198,10 @@ and pulls just the current flow's slice by tag, then re-checks it against the
 running app rather than trusting it. Writing goes through a propose-then-apply
 step that shows you near-duplicates and refuses the edits that quietly break the
 store.
+
+## See also
+
+- [`memory-model.md`](../skills/agentqa-write-test/references/memory-model.md) — **the schema** (the exact note format); this page never restates it
+- [`architecture.md`](architecture.md) — the trust order and why memory is treated as a claim
+- [`workflow.md`](workflow.md) — where Recall and Capture sit in a run
+- [`configuration.md`](configuration.md) — the `docs:` field that enables the intent layer

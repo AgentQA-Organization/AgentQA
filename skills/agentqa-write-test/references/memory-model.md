@@ -1,9 +1,9 @@
 # agentqa memory model — behavioral knowledge store
 
 **This file is the schema.** Everything else — the SKILL.md steps, the store's own
-`README.md`, the project README — points here rather than restating it, so there
-is exactly one place to change when the schema moves. Read this before touching
-memory; don't re-derive it.
+`README.md`, the project README, and the docs pages (`docs/memory.md`) — points
+here rather than restating it, so there is exactly one place to change when the
+schema moves. Read this before touching memory; don't re-derive it.
 
 Memory persists **behavioral** knowledge the skill hand-earns at runtime — real
 navigation paths, native-vs-web screens, verified identifier placements,

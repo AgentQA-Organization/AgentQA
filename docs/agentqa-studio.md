@@ -87,8 +87,7 @@ Same project setup as `agentqa-write-test`: a repo configured by
 `/agentqa-init init` (it has `.agentqa/config.yml` and a scaffolded
 `.agentqa/memory/`). For the **viewer** that is all you need. For the **live
 test-writing flow** you also need what any write-test run needs — a booted
-simulator/emulator and Appium running (see the toolchain in the main
-[README](../README.md)).
+simulator/emulator and Appium running (see [`toolchain.md`](toolchain.md)).
 
 ### Option A — full experience (agent attached)
 
