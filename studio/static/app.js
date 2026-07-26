@@ -23,6 +23,8 @@ function el(html) {
 const SVG_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
 const SVG_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>';
 
+let openNotePath = null;
+
 // ---- Theme toggle (client-only) ----------------------------------------
 (function theme() {
   const root = document.documentElement;
@@ -223,58 +225,74 @@ async function loadMemory() {
   try {
     const m = await fetchJSON("/api/memory");
     box.innerHTML = "";
-    for (const kind of ["flows", "screens", "failures"]) {
-      const group = el(`<div class="mem-group"><strong>${kind}</strong></div>`);
-      for (const name of m[kind]) {
-        const a = el(`<a href="#">${esc(name)}</a>`);
-        a.onclick = async (ev) => {
-          ev.preventDefault();
-          try {
-            const note = await fetchJSON(
-              `/api/memory/note?path=${encodeURIComponent(kind + "/" + name + ".md")}`);
-            document.getElementById("note-view").textContent = note.content;
-          } catch (err) {
-            document.getElementById("note-view").textContent = `note error: ${err.message}`;
-          }
-        };
-        group.appendChild(a);
+    const groups = [["flows", "Flows"], ["screens", "Screens"], ["failures", "Failures"]];
+    for (const [key, label] of groups) {
+      box.appendChild(el(`<div class="mem-ghead"><span class="card-title">${esc(label)}</span></div>`));
+      for (const name of m[key]) {
+        const path = key + "/" + name + ".md";
+        const btn = el(`<button class="mem-note"${path === openNotePath ? ' aria-current="true"' : ""}>${esc(name)}</button>`);
+        btn.onclick = () => openNote(path);
+        box.appendChild(btn);
       }
-      box.appendChild(group);
     }
-    box.appendChild(el(`<div class="muted">env.md: ${m.env ? "present" : "absent"}</div>`));
+    const chip = document.getElementById("env-chip");
+    chip.hidden = !m.env;
   } catch (err) {
     box.textContent = `memory error: ${err.message}`;
   }
 }
 
+async function openNote(path) {
+  openNotePath = path;
+  document.querySelectorAll(".mem-note").forEach((b) => b.removeAttribute("aria-current"));
+  try {
+    const note = await fetchJSON(`/api/memory/note?path=${encodeURIComponent(path)}`);
+    renderNote(path, note.content);
+  } catch (err) {
+    document.getElementById("note-view").innerHTML = `<div class="nv-body"><p class="plain">note error: ${esc(err.message)}</p></div>`;
+  }
+  loadMemory(); // repaint sidebar so the active note highlights
+}
+
+// Safe, line-based render — every fragment is escaped; never innerHTML raw content.
+function renderNote(path, content) {
+  const name = path.split("/").pop().replace(/\.md$/, "");
+  const group = path.split("/")[0];
+  const view = document.getElementById("note-view");
+  view.innerHTML =
+    `<div class="card-head nv-head"><span class="mono" style="font-size:12px;color:var(--muted)">${esc(name)}</span>` +
+    `<span class="nv-tag">${esc(group)}</span></div><div class="nv-body" id="nv-body"></div>`;
+  const body = document.getElementById("nv-body");
+  for (const line of String(content).split("\n")) {
+    if (line.indexOf("# ") === 0) { body.appendChild(el(`<h3>${esc(line.slice(2))}</h3>`)); continue; }
+    if (line === "") { body.appendChild(el(`<div style="height:6px"></div>`)); continue; }
+    const m = /^(Identifiers|Key assertion|Verified):(.*)$/.exec(line);
+    if (m) { body.appendChild(el(`<p><span class="k">${esc(m[1])}:</span>${esc(m[2])}</p>`)); continue; }
+    body.appendChild(el(`<p class="plain">${esc(line)}</p>`));
+  }
+}
+
+function memBanner(kind /* "ok"|"bad"|"warn" */, text) {
+  document.getElementById("mem-banner").innerHTML = `<div class="result-banner ${kind}">${esc(text)}</div>`;
+}
+
 async function loadStale() {
-  const box = document.getElementById("note-view");
   try {
     const r = await fetchJSON("/api/memory/stale");
-    box.textContent = r.stale == null
-      ? "stale check unavailable (memory scripts not found)"
-      : (r.stale || "(nothing stale)");
+    if (r.stale == null) return memBanner("warn", "stale check unavailable (memory scripts not found)");
+    memBanner("warn", r.stale ? `Stale: ${r.stale}` : "Nothing stale");
   } catch (err) {
-    box.textContent = `stale error: ${err.message}`;
+    memBanner("bad", `stale error: ${err.message}`);
   }
 }
 
 async function loadLint() {
-  const health = document.getElementById("mem-health");
-  const box = document.getElementById("note-view");
   try {
     const r = await fetchJSON("/api/memory/lint");
-    if (r.lint == null) {
-      health.textContent = "lint: unavailable";
-      health.className = "muted";
-      box.textContent = "lint unavailable (memory scripts not found)";
-      return;
-    }
-    health.textContent = r.lint.ok ? "lint: OK" : "lint: FAIL";
-    health.className = r.lint.ok ? "dot ok" : "dot bad";
-    box.textContent = r.lint.output || "(no output)";
+    if (r.lint == null) return memBanner("warn", "lint unavailable (memory scripts not found)");
+    memBanner(r.lint.ok ? "ok" : "bad", `${r.lint.ok ? "PASS" : "FAIL"} — ${r.lint.output || "(no output)"}`);
   } catch (err) {
-    box.textContent = `lint error: ${err.message}`;
+    memBanner("bad", `lint error: ${err.message}`);
   }
 }
 
