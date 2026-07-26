@@ -20,6 +20,56 @@ function el(html) {
   return t.content.firstElementChild;
 }
 
+const SVG_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
+const SVG_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>';
+
+// ---- Theme toggle (client-only) ----------------------------------------
+(function theme() {
+  const root = document.documentElement;
+  let stored = null;
+  try { stored = localStorage.getItem("aqa-theme"); } catch (e) {}
+  if (stored) root.setAttribute("data-theme", stored);
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const isDark = () => {
+    const a = root.getAttribute("data-theme");
+    return a ? a === "dark" : mq.matches;
+  };
+  const paint = () => {
+    document.getElementById("icon-sun").style.display = isDark() ? "block" : "none";
+    document.getElementById("icon-moon").style.display = isDark() ? "none" : "block";
+  };
+  document.getElementById("theme-toggle").onclick = () => {
+    const next = isDark() ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("aqa-theme", next); } catch (e) {}
+    paint();
+  };
+  mq.addEventListener("change", paint);
+  paint();
+})();
+
+// ---- Tabs ---------------------------------------------------------------
+const TAB_NAMES = ["rig", "tests", "memory", "agent"];
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === name)));
+  TAB_NAMES.forEach((n) => document.getElementById("panel-" + n).classList.toggle("active", n === name));
+}
+document.querySelectorAll(".tab").forEach((t) => { t.onclick = () => showTab(t.dataset.tab); });
+
+// Repaint per-tab status dots from current state. Called by loaders/pollers.
+const tabState = { rig: null, tests: null, agent: null };
+function setTabDot(tab, cls /* "warn"|"alert"|"busy"|null */) {
+  tabState[tab] = cls;
+  const btn = document.querySelector(`.tab[data-tab="${tab}"]`);
+  if (!btn) return;
+  const old = btn.querySelector(".tdot");
+  if (old) old.remove();
+  if (cls) btn.appendChild(el(`<span class="tdot ${cls}${cls !== "warn" ? " pulse" : ""}"></span>`));
+}
+function paintTabDots() { /* no-op hook; panels call setTabDot directly */ }
+
+showTab("agent");
+
 async function loadConfig() {
   const box = document.getElementById("config");
   try {
