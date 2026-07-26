@@ -319,13 +319,18 @@ const STAGES = ["map", "clarify", "explore", "identifiers", "build",
 const seenRecordIds = new Set();
 
 function renderStepper(current) {
+  const card = document.getElementById("stepper-card");
   const box = document.getElementById("stepper");
+  if (!current) { card.style.display = "none"; box.innerHTML = ""; return; }
+  card.style.display = "";
   const seq = STAGES.includes(current) ? STAGES : STAGES.concat([current]);
   const idx = seq.indexOf(current);
   box.innerHTML = "";
   seq.forEach((s, i) => {
     const cls = i < idx ? "done" : (i === idx ? "active" : "");
-    box.appendChild(el(`<span class="step ${cls}">${esc(s)}</span>`));
+    const mark = i < idx ? "✓ " : (i === idx ? "● " : "○ ");
+    box.appendChild(el(`<span class="step ${cls}">${mark}${esc(s)}</span>`));
+    if (i < seq.length - 1) box.appendChild(el(`<span class="step-sep ${i < idx ? "done" : ""}"></span>`));
   });
 }
 
@@ -336,19 +341,33 @@ function logAppend(node) {
   log.scrollTop = log.scrollHeight;
 }
 
+function convoCount() {
+  const log = document.getElementById("agent-log");
+  document.getElementById("convo-count").textContent = `${log.children.length} entries`;
+}
+
 function appendProgress(rec) {
-  logAppend(el(`<div class="msg">${esc(rec.text)}</div>`));
+  logAppend(el(
+    `<div class="prog"><span class="pdot${rec.stage ? "" : " plain"}"></span>` +
+    `<span class="ptext">${esc(rec.text)}${rec.stage ? `<span class="pstage">${esc(rec.stage)}</span>` : ""}</span></div>`));
   if (rec.stage) renderStepper(rec.stage);
+  convoCount();
 }
 
 function appendResult(rec) {
-  const cls = rec.status === "green" ? "ok" : "bad";
-  const path = rec.test_path ? ` — ${esc(rec.test_path)}` : "";
-  logAppend(el(`<div class="msg card"><strong class="dot ${cls}">${esc(rec.status)}</strong> ${esc(rec.summary || "")}${path}</div>`));
+  const green = rec.status === "green";
+  logAppend(el(
+    `<div class="result ${green ? "green" : "abandoned"}"><div class="rline"><span>${green ? "✓" : "—"}</span>` +
+    `<span>${esc(rec.summary || rec.status)}</span></div>` +
+    (rec.test_path ? `<div class="rpath">${esc(rec.test_path)}</div>` : "") + `</div>`));
+  renderStepper(null);
+  setTabDot("agent", null);
+  convoCount();
 }
 
 function appendError(rec) {
-  logAppend(el(`<div class="msg card"><strong class="dot bad">error</strong> ${esc(rec.text)}</div>`));
+  logAppend(el(`<div class="result abandoned"><div class="rline"><span>✕</span><span>${esc(rec.text)}</span></div></div>`));
+  convoCount();
 }
 
 async function sendReply(payload) {
@@ -359,111 +378,127 @@ async function sendReply(payload) {
   });
 }
 
+const CARD_KIND_LABEL = { form: "Clarify", confirm: "Build step", review: "Review" };
+
 function lockCard(card, summary) {
   card.querySelectorAll("input,button,textarea").forEach((n) => { n.disabled = true; });
-  card.appendChild(el(`<div class="muted locked">↳ ${esc(summary)}</div>`));
+  const head = card.querySelector(".mc-head");
+  if (head && !head.querySelector(".mc-locked")) head.appendChild(el(`<span class="mc-locked">answered</span>`));
+  card.querySelector(".mc-body").appendChild(el(`<div class="mc-locked-label">↳ ${esc(summary)}</div>`));
 }
 
-function renderForm(rec, card) {
+function renderCard(rec) {
+  const label = rec.subtype === "permission" ? "Permission" : (CARD_KIND_LABEL[rec.kind] || rec.kind);
+  const card = el(
+    `<div class="msg-card"><div class="mc-head"><span class="mc-kind">${esc(label)}</span></div>` +
+    `<div class="mc-body"><div class="mc-prompt">${esc(rec.prompt || "")}</div></div></div>`);
+  const body = card.querySelector(".mc-body");
+  if (rec.kind === "form") renderForm(rec, body);
+  else if (rec.kind === "confirm") renderConfirm(rec, body);
+  else if (rec.kind === "review") renderReview(rec, body);
+  logAppend(card);
+  setTabDot("agent", "alert");
+  convoCount();
+}
+
+function renderForm(rec, body) {
   const fields = {};
   (rec.questions || []).forEach((q) => {
     const wrap = el(`<div class="field"><label>${esc(q.label)}</label></div>`);
     if (q.kind === "choice") {
-      const choices = el(`<div class="choices"></div>`);
+      const choices = el(`<div class="segmented"></div>`);
       (q.options || []).forEach((opt) => {
-        choices.appendChild(el(
-          `<label class="opt"><input type="radio" name="${esc(rec.id + q.qid)}" value="${esc(opt)}"> ${esc(opt)}</label>`));
+        const seg = el(`<button type="button" class="seg" aria-pressed="false">${esc(opt)}</button>`);
+        seg.dataset.value = opt;
+        seg.onclick = () => {
+          choices.querySelectorAll(".seg").forEach((s) => s.setAttribute("aria-pressed", "false"));
+          seg.setAttribute("aria-pressed", "true");
+        };
+        choices.appendChild(seg);
       });
       wrap.appendChild(choices);
     } else {
-      wrap.appendChild(el(`<input type="text" value="${esc(q.default || "")}">`));
+      wrap.appendChild(el(`<input class="input" type="text" value="${esc(q.default || "")}" style="width:100%">`));
     }
-    card.appendChild(wrap);
+    body.appendChild(wrap);
     fields[q.qid] = { q, wrap };
   });
-  const submit = el(`<button>Submit</button>`);
+  const submit = el(`<button class="btn btn-primary">Submit</button>`);
   submit.onclick = async () => {
     submit.disabled = true;
     try {
       const answers = {};
       for (const [qid, f] of Object.entries(fields)) {
         if (f.q.kind === "choice") {
-          const checked = f.wrap.querySelector("input:checked");
-          answers[qid] = checked ? checked.value : "";
+          const pressed = f.wrap.querySelector('.seg[aria-pressed="true"]');
+          answers[qid] = pressed ? pressed.dataset.value : "";
         } else {
           answers[qid] = f.wrap.querySelector("input").value;
         }
       }
       await sendReply({ reply_to: rec.id, answers });
-      lockCard(card, "answered");
+      lockCard(submit.closest(".msg-card"), "answered");
     } catch (err) {
-      card.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
+      body.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
       submit.disabled = false;
     }
   };
-  card.appendChild(submit);
+  body.appendChild(submit);
 }
 
-function renderConfirm(rec, card) {
-  const btn = el(`<button>I've built &amp; installed</button>`);
+function renderConfirm(rec, body) {
+  const btn = el(`<button class="btn btn-primary">I've built &amp; installed</button>`);
   btn.onclick = async () => {
     btn.disabled = true;
     try {
       await sendReply({ reply_to: rec.id, decision: "built" });
-      lockCard(card, "built");
+      lockCard(btn.closest(".msg-card"), "built");
     } catch (err) {
-      card.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
+      body.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
       btn.disabled = false;
     }
   };
-  card.appendChild(btn);
+  body.appendChild(btn);
 }
 
-function renderReview(rec, card) {
-  card.appendChild(el(`<pre class="diffbox">${esc(rec.diff || "")}</pre>`));
+function renderReview(rec, body) {
+  if (rec.diff) {
+    body.appendChild(el(`<div class="diff-label">Diff</div>`));
+    body.appendChild(el(`<div class="diffbox">${esc(rec.diff)}</div>`));
+  }
   (rec.test_files || []).forEach((f) => {
-    card.appendChild(el(`<div class="muted">${esc(f.path)}</div>`));
-    card.appendChild(el(`<pre class="diffbox">${esc(f.content)}</pre>`));
+    body.appendChild(el(`<div class="diff-label">${esc(f.path)}</div>`));
+    body.appendChild(el(`<div class="diffbox">${esc(f.content)}</div>`));
   });
-  const note = el(`<textarea placeholder="reason (if rejecting)"></textarea>`);
-  note.style.display = "none";
-  const approve = el(`<button>Approve</button>`);
-  const reject = el(`<button>Reject</button>`);
+  const note = el(`<div class="field" style="margin-top:10px" hidden><label>Rejection note (optional)</label><input class="input" type="text" style="width:100%" placeholder="What should be changed?"></div>`);
+  const approve = el(`<button class="btn btn-success">Approve</button>`);
+  const reject = el(`<button class="btn btn-danger">Reject</button>`);
   approve.onclick = async () => {
     approve.disabled = reject.disabled = true;
     try {
       await sendReply({ reply_to: rec.id, decision: "approve" });
-      lockCard(card, "approved");
+      lockCard(approve.closest(".msg-card"), "approved");
     } catch (err) {
-      card.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
+      body.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
       approve.disabled = reject.disabled = false;
     }
   };
   reject.onclick = async () => {
-    if (note.style.display === "none") { note.style.display = "block"; return; }
+    if (note.hidden) { note.hidden = false; return; }
     approve.disabled = reject.disabled = true;
     try {
-      await sendReply({ reply_to: rec.id, decision: "reject", note: note.value });
-      lockCard(card, "rejected");
+      await sendReply({ reply_to: rec.id, decision: "reject", note: note.querySelector("input").value });
+      lockCard(reject.closest(".msg-card"), "rejected");
     } catch (err) {
-      card.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
+      body.appendChild(el(`<div class="muted">reply failed: ${esc(err.message)}</div>`));
       approve.disabled = reject.disabled = false;
     }
   };
-  const actions = el(`<div class="card-actions"></div>`);
+  const actions = el(`<div class="card-actions" style="margin-top:12px"></div>`);
   actions.appendChild(approve);
   actions.appendChild(reject);
-  card.appendChild(note);
-  card.appendChild(actions);
-}
-
-function renderCard(rec) {
-  const card = el(`<div class="msg card"></div>`);
-  card.appendChild(el(`<div class="prompt">${esc(rec.prompt || "")}</div>`));
-  if (rec.kind === "form") renderForm(rec, card);
-  else if (rec.kind === "confirm") renderConfirm(rec, card);
-  else if (rec.kind === "review") renderReview(rec, card);
-  logAppend(card);
+  body.appendChild(actions);
+  body.appendChild(note);
 }
 
 function dispatch(rec) {
@@ -489,26 +524,19 @@ function connectStream() {
 
 async function pollAgentState() {
   const box = document.getElementById("agent-status");
+  const label = document.getElementById("attach-label");
+  const set = (state, text) => { box.className = "attach " + state; label.textContent = text; };
   try {
     const s = await fetchJSON("/api/studio/state");
     const stale = s.heartbeat_ts && (Date.now() - Date.parse(s.heartbeat_ts) > 60000);
-    if (!s.attached) {
-      box.textContent = "No agent connected — run /agentqa-studio in Claude Code";
-      box.className = "muted";
-    } else if (s.status === "waiting") {
-      box.textContent = stale
-        ? "Agent waiting (no heartbeat — may have disconnected)"
-        : "Agent attached — waiting on you";
-      box.className = stale ? "dot bad" : "dot ok";
-    } else if (s.status === "running") {
-      box.textContent = "Agent working…";
-      box.className = "dot ok";
-    } else {
-      box.textContent = "Agent attached — idle";
-      box.className = "dot ok";
-    }
+    if (!s.attached) { set("disconnected", "No agent connected — run /agentqa-studio in Claude Code"); setTabDot("agent", null); }
+    else if (s.status === "waiting") {
+      if (stale) { set("stale", "Agent waiting (no heartbeat — may have disconnected)"); setTabDot("agent", "alert"); }
+      else { set("waiting", "Agent attached — waiting on you"); setTabDot("agent", "alert"); }
+    } else if (s.status === "running") { set("running", "Agent working…"); setTabDot("agent", "busy"); }
+    else { set("idle", "Agent attached — idle"); setTabDot("agent", null); }
   } catch (err) {
-    box.textContent = `agent state error: ${err.message}`;
+    set("disconnected", `agent state error: ${err.message}`);
   }
 }
 
@@ -525,15 +553,17 @@ async function startJob() {
       body: JSON.stringify({ flow_idea: idea }),
     });
     ideaEl.value = "";
-    logAppend(el(`<div class="msg muted">▸ queued: ${esc(idea)}</div>`));
+    logAppend(el(`<div class="prog"><span class="pdot plain"></span><span class="ptext muted">▸ queued: ${esc(idea)}</span></div>`));
+    convoCount();
   } catch (err) {
-    logAppend(el(`<div class="msg card"><strong class="dot bad">error</strong> ${esc(err.message)}</div>`));
+    appendError({ text: err.message });
   } finally {
     btn.disabled = false;
   }
 }
 
 document.getElementById("job-start").onclick = startJob;
+document.getElementById("job-idea").addEventListener("keydown", (e) => { if (e.key === "Enter") startJob(); });
 pollAgentState();
 setInterval(pollAgentState, 4000);
 connectStream();
