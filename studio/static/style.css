@@ -132,7 +132,6 @@ a { color: inherit; }
 h1, h2, h3 { margin: 0; font-weight: 600; }
 
 .mono { font-family: var(--font-mono); }
-.tnum { font-variant-numeric: tabular-nums; }
 
 /* ---- Header --------------------------------------------------- */
 header.app {
@@ -152,23 +151,12 @@ header.app {
 }
 .brand-mark svg { width: 15px; height: 15px; }
 .brand-name { font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
-.preview-chip {
-  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
-  padding: 2px 6px; border-radius: 5px;
-  color: var(--muted); border: 1px solid var(--border); background: var(--raised);
-}
 
 .config {
   display: flex; align-items: center; gap: 7px;
   font-family: var(--font-mono); font-size: 12px; color: var(--muted);
   flex: 1; min-width: 0; overflow: hidden;
 }
-.config .pill {
-  padding: 2px 7px; border-radius: 5px; background: var(--raised);
-  color: var(--sub); font-size: 11px;
-}
-.config .sep { opacity: 0.5; }
-.config .val { white-space: nowrap; }
 
 .icon-btn {
   margin-left: auto; flex-shrink: 0;
@@ -311,7 +299,6 @@ main { max-width: 1024px; margin: 0 auto; padding: 26px 20px 60px; }
 }
 .mem-note:hover { background: var(--raised); color: var(--fg); }
 .mem-note[aria-current="true"] { background: var(--accent-bg); color: var(--accent-fg); }
-.mem-note .stale { color: var(--warn); margin-left: 6px; }
 
 .note-view { overflow: hidden; min-height: 300px; }
 .note-view .nv-head { display: flex; align-items: center; justify-content: space-between; }
@@ -404,7 +391,6 @@ main { max-width: 1024px; margin: 0 auto; padding: 26px 20px 60px; }
 
 .muted { color: var(--muted); }
 .row-gap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.stack-sm { display: flex; flex-direction: column; gap: 8px; }
 
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }

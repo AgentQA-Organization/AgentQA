@@ -175,7 +175,7 @@ async function runTests(target) {
   if (activeRun) { activeRun.close(); activeRun = null; }
   const out = document.getElementById("run-output");
   out.innerHTML = "";
-  document.getElementById("exit-badge").textContent = "";
+  const badge = document.getElementById("exit-badge"); badge.textContent = ""; badge.className = "exit-badge";
   document.querySelectorAll(".file-row").forEach((r) => r.classList.toggle("running", r.dataset.f === target));
   termLine(`$ pytest ${target}`, "dim");
   setRunButtonsDisabled(true);
