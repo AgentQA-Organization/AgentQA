@@ -117,7 +117,7 @@ function renderRigSummary(total, ready) {
 }
 
 function setRunButtonsDisabled(disabled) {
-  document.querySelectorAll("#tests button").forEach((b) => { b.disabled = disabled; });
+  document.querySelectorAll("#tests button, #run-all").forEach((b) => { b.disabled = disabled; });
 }
 
 async function loadTests() {
@@ -125,30 +125,59 @@ async function loadTests() {
   try {
     const data = await fetchJSON("/api/tests");
     box.innerHTML = "";
-    box.appendChild(el(`<button id="run-all">Run all</button>`));
-    document.getElementById("run-all").onclick = () => runTests("all");
     for (const t of data.tests) {
-      const row = el(`<div class="test-row"><span>${esc(t)}</span></div>`);
-      const btn = el(`<button>Run</button>`);
+      const row = el(`<div class="file-row" data-f="${esc(t)}"><span class="fname">${esc(t)}</span></div>`);
+      const btn = el(`<button class="btn xs">Run</button>`);
       btn.onclick = () => runTests(t);
       row.appendChild(btn);
       box.appendChild(row);
     }
-    if (data.artifacts.length) {
-      box.appendChild(el(`<div class="muted">Last failures: ${data.artifacts.map((a) => esc(a.name)).join(", ")}</div>`));
-    }
+    renderFailures(data.artifacts || []);
   } catch (err) {
     box.textContent = `tests error: ${err.message}`;
   }
 }
 
+function renderFailures(artifacts) {
+  const card = document.getElementById("failures-card");
+  const body = document.getElementById("failures-body");
+  if (!artifacts.length) { card.hidden = true; return; }
+  card.hidden = false;
+  document.getElementById("failures-label").textContent = `Last failures (${artifacts.length})`;
+  body.innerHTML = "";
+  for (const a of artifacts) {
+    const row = el(`<div class="fail-row"><span class="fn">${esc(a.name)}</span><span class="arts"></span></div>`);
+    const arts = row.querySelector(".arts");
+    if (a.xml) arts.appendChild(el(`<span class="btn xs" title="download not yet wired">.xml</span>`));
+    if (a.png) arts.appendChild(el(`<span class="btn xs" title="download not yet wired">.png</span>`));
+    body.appendChild(row);
+  }
+}
+
 let activeRun = null;
+
+function termLine(text, cls) {
+  const out = document.getElementById("run-output");
+  out.appendChild(el(`<div${cls ? ` class="${cls}"` : ""}>${esc(text || " ")}</div>`));
+  out.scrollTop = out.scrollHeight;
+}
+
+function classifyLine(line) {
+  if (line.startsWith("$")) return "dim";
+  if (/FAILED|Error|Exception|failed/.test(line)) return "red";
+  if (/passed|\[100%\]|PASSED/.test(line)) return "green";
+  return "";
+}
 
 async function runTests(target) {
   if (activeRun) { activeRun.close(); activeRun = null; }
   const out = document.getElementById("run-output");
-  out.textContent = `$ pytest ${target}\n`;
+  out.innerHTML = "";
+  document.getElementById("exit-badge").textContent = "";
+  document.querySelectorAll(".file-row").forEach((r) => r.classList.toggle("running", r.dataset.f === target));
+  termLine(`$ pytest ${target}`, "dim");
   setRunButtonsDisabled(true);
+  setTabDot("tests", "busy");
   let run_id;
   try {
     ({ run_id } = await fetchJSON("/api/run", {
@@ -157,27 +186,34 @@ async function runTests(target) {
       body: JSON.stringify({ target, env: {} }),
     }));
   } catch (err) {
-    out.textContent += `\n[error: ${err.message}]\n`;
+    termLine(`[error: ${err.message}]`, "red");
     setRunButtonsDisabled(false);
+    setTabDot("tests", null);
     return;
   }
   const es = new EventSource(`/api/run/stream?id=${encodeURIComponent(run_id)}`);
   activeRun = es;
   es.onmessage = (e) => {
     if (e.data.startsWith("__END__:")) {
-      out.textContent += `\n[exit ${e.data.split(":")[1]}]\n`;
+      const code = e.data.split(":")[1];
+      termLine(`[exit ${code}]`, code === "0" ? "green" : "red");
+      const badge = document.getElementById("exit-badge");
+      badge.textContent = `exit ${code}`;
+      badge.className = "exit-badge " + (code === "0" ? "ok" : "bad");
       es.close();
       activeRun = null;
+      setTabDot("tests", null);
+      document.querySelectorAll(".file-row").forEach((r) => r.classList.remove("running"));
       loadTests();
       return;
     }
-    out.textContent += e.data + "\n";
-    out.scrollTop = out.scrollHeight;
+    termLine(e.data, classifyLine(e.data));
   };
   es.onerror = () => {
     es.close();
     activeRun = null;
     setRunButtonsDisabled(false);
+    setTabDot("tests", null);
   };
 }
 
@@ -246,6 +282,12 @@ document.querySelectorAll("[data-refresh]").forEach((b) => {
 });
 document.getElementById("stale-btn").onclick = loadStale;
 document.getElementById("lint-btn").onclick = loadLint;
+document.getElementById("run-all").onclick = () => runTests("all");
+document.getElementById("failures-toggle").onclick = function () {
+  const open = this.getAttribute("aria-expanded") === "true";
+  this.setAttribute("aria-expanded", String(!open));
+  document.getElementById("failures-body").hidden = open;
+};
 
 loadConfig();
 loadRig();
