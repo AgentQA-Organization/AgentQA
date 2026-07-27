@@ -30,6 +30,13 @@ _PLUGIN_ROOT = Path(os.environ.get("CLAUDE_PLUGIN_ROOT")
                     or Path(__file__).resolve().parents[2])
 _SCRIPTS = _PLUGIN_ROOT / "skills" / "agentqa-studio" / "scripts"
 
+# Same import pattern studio-post.py and studio-wait.py use for this module: it
+# is stdlib-only and self-contained, so the restore in _restore_state below can
+# call the real write_state() instead of hand-rolling a json.dump that would
+# drift from the protocol.
+sys.path.insert(0, str(_SCRIPTS))
+import studio_common as sc
+
 WAIT_TIMEOUT_S = 540      # under the hook's own 600s cap, so we return rather
                           # than get killed mid-wait
 
@@ -77,7 +84,7 @@ def _clip(text):
 def describe_tool(tool_name, tool_input):
     """A prompt line and a body the tester can judge without opening a terminal."""
     data = tool_input if isinstance(tool_input, dict) else {}
-    path = data.get("file_path") or data.get("notebook_path") or ""
+    path = data.get("file_path") or ""
     if tool_name == "Edit":
         return ("Agent wants to edit %s" % (path or "a file"),
                 _clip("- %s\n+ %s" % (data.get("old_string", ""),
@@ -131,9 +138,34 @@ def _script(name, *args):
     return out
 
 
-def main(argv=None, stdin=None):
+def _restore_state(repo, connector, status, awaiting):
+    """Put status/awaiting back to what they were before this card was posted.
+
+    studio-post.py's `question` post flips state.json to status="waiting",
+    awaiting=<qid> and nothing else ever restores it — the mailbox is built for
+    the agent's own checkpoints, where the connector script that posted the
+    question is also the one that later posts a `result` and clears it. This
+    hook has no such follow-up call, so once the card is resolved (approved,
+    rejected, timed out, or an unparseable wait result — the card is finished
+    in all of them) it must put the prior values back itself, or the dashboard
+    reads "waiting on you" for an agent that is back to working.
+
+    Best-effort and silent on purpose: the human's decision (or the fallback to
+    the terminal dialog) already happened and must reach its outcome regardless
+    of whether this bookkeeping succeeds, so every exception here — including
+    Superseded, which write_state raises when another connector has since taken
+    the mailbox over, and which must simply not be restored into — is
+    swallowed rather than allowed to change the return value or crash the hook.
+    """
     try:
-        return _main(argv, stdin)
+        sc.write_state(repo, connector=connector, status=status, awaiting=awaiting)
+    except Exception:
+        pass
+
+
+def main(stdin=None):
+    try:
+        return _main(stdin)
     except Exception:
         # A safety net, not a substitute for the guards above: for this hook,
         # falling back to Claude Code's own dialog is the only acceptable
@@ -143,7 +175,7 @@ def main(argv=None, stdin=None):
         return 0
 
 
-def _main(argv, stdin):
+def _main(stdin):
     raw = (stdin or sys.stdin).read()
     try:
         event = json.loads(raw)
@@ -158,6 +190,8 @@ def _main(argv, stdin):
     if not should_bridge(state):
         return 0
     connector = state.get("connector_id")
+    prior_status = state.get("status")
+    prior_awaiting = state.get("awaiting")
 
     prompt, diff = describe_tool(event.get("tool_name") or "a tool",
                                  event.get("tool_input"))
@@ -167,23 +201,29 @@ def _main(argv, stdin):
                      "--connector", connector)
     if posted.returncode != 0:         # superseded (3) or a broken mailbox
         return 0
-    qid = posted.stdout.strip()
-    if not qid:
-        return 0
-
-    waited = _script("studio-wait.py", str(repo), "--reply-to", qid,
-                     "--timeout", str(WAIT_TIMEOUT_S), "--connector", connector)
     try:
-        result = json.loads(waited.stdout.strip() or "{}")
-    except ValueError:
-        result = {}
+        qid = posted.stdout.strip()
+        if not qid:
+            return 0
 
-    out, err, code = decide_output(result)
-    if out:
-        sys.stdout.write(out)
-    if err:
-        sys.stderr.write(err)
-    return code
+        waited = _script("studio-wait.py", str(repo), "--reply-to", qid,
+                         "--timeout", str(WAIT_TIMEOUT_S), "--connector", connector)
+        try:
+            result = json.loads(waited.stdout.strip() or "{}")
+        except ValueError:
+            result = {}
+
+        out, err, code = decide_output(result)
+        if out:
+            sys.stdout.write(out)
+        if err:
+            sys.stderr.write(err)
+        return code
+    finally:
+        # The post above succeeded, so it did flip state.json to waiting/awaiting
+        # — every path from here on (early return for a blank qid, or any of
+        # decide_output's outcomes) must restore it.
+        _restore_state(repo, connector, prior_status, prior_awaiting)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,9 @@ the terminal into the browser. It must never answer one. So every path that is n
 an explicit human click has to come out as ("", "", 0) — print nothing, exit 0,
 leave the terminal dialog alone.
 """
+import io
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -17,7 +19,7 @@ import pytest
 
 from studio.hooks.permission_bridge import (
     DEFAULT_REJECT_REASON, DIFF_LIMIT, HEARTBEAT_MAX_AGE_S,
-    decide_output, describe_tool, should_bridge,
+    _main, decide_output, describe_tool, should_bridge,
 )
 
 NOW = datetime(2026, 7, 27, 12, 0, 0, tzinfo=timezone.utc)
@@ -47,6 +49,19 @@ def test_no_bridge_when_detached():
 
 def test_no_bridge_without_a_connector_id():
     assert should_bridge(state(connector_id=None), now=NOW) is False
+
+
+def test_should_bridge_rejects_non_string_connector_id_directly():
+    """Deliberately bypasses main()'s blanket `except Exception`: calling
+    should_bridge() as a plain function, not through the hook's subprocess entry
+    point, means a stripped type guard shows up as this test failing rather than
+    being swallowed. Mutation-verified: delete the `isinstance(connector_id, str)`
+    guard in should_bridge and, with the heartbeat pinned live via now=NOW, this
+    starts returning True and the test fails — whereas
+    test_non_string_connector_id_in_state_is_silent (below) still passes, because
+    main()'s except Exception catches the TypeError the missing guard would have
+    let through to subprocess.run and still exits 0 either way."""
+    assert should_bridge(state(connector_id=12345), now=NOW) is False
 
 
 def test_no_bridge_when_the_heartbeat_is_long_dead():
@@ -205,11 +220,18 @@ def _answer_when_asked(repo, decision, note=None, timeout=20):
 
 
 def _run_hook(repo, payload):
+    # The subprocess's actual OS-level cwd is `repo`, not REPO_ROOT — tests that
+    # pass a non-string `cwd` in the payload exercise _main's os.getcwd()
+    # fallback, and that fallback must land in the isolated `repo` the test gave
+    # it, never in this source checkout (which could have its own live
+    # .agentqa/studio/state.json). PYTHONPATH keeps `-m` resolving the package
+    # regardless of where the process actually starts.
+    env = dict(os.environ, PYTHONPATH=str(REPO_ROOT))
     try:
         return subprocess.run(
             [sys.executable, "-m", "studio.hooks.permission_bridge"],
             input=json.dumps(payload), capture_output=True, text=True,
-            cwd=str(REPO_ROOT), timeout=30)
+            cwd=str(repo), env=env, timeout=30)
     except subprocess.TimeoutExpired:
         pytest.fail(
             "hook did not exit within 30s — the mailbox wiring likely "
@@ -256,6 +278,66 @@ def test_card_reaches_the_outbox(attached_repo):
     assert "import pytest" in cards[0]["diff"]
 
 
+def test_state_is_restored_after_an_approved_card(attached_repo):
+    """Finding 1 regression: studio-post.py's `question` post flips state.json to
+    status="waiting", awaiting=<qid>, and nothing else in the mailbox protocol
+    ever clears it for this hook (only a `result` post does, and the hook never
+    posts one). Without the hook restoring it, an approved card leaves the
+    dashboard reading "waiting on you" for an agent that went straight back to
+    work — and, once the heartbeat goes quiet during the next long tool call,
+    escalating to a false "may have disconnected" / shutdown warning."""
+    _answer_when_asked(attached_repo, "approve")
+    _run_hook(attached_repo, {
+        "hook_event_name": "PermissionRequest", "cwd": str(attached_repo),
+        "tool_name": "Edit",
+        "tool_input": {"file_path": "Home.swift",
+                       "old_string": "a", "new_string": "b"}})
+    sys.path.insert(0, str(SCRIPTS))
+    import studio_common as sc
+    state = sc.read_state(attached_repo)
+    assert state["status"] == "running"    # what attached_repo's reset_state set
+    assert state["awaiting"] is None
+
+
+@pytest.mark.parametrize("wait_stdout", [
+    '{"status": "waiting"}',                                                   # timeout
+    'not json',                                                                # unparseable
+    '{"status": "answered", "record": {"decision": "reject", "note": "no"}}',  # reject
+    '{"status": "answered", "record": {"decision": "approve"}}',               # approve
+])
+def test_restore_runs_for_every_way_a_card_can_resolve(monkeypatch, tmp_path, wait_stdout):
+    """Finding 1 regression, all four shapes decide_output can produce: whichever
+    one it is, the card is finished and status/awaiting must go back to what they
+    were before the post — not just on the approve path exercised above. Fakes
+    only the studio-wait.py leg (so this doesn't have to run out a real 540s
+    timeout to prove the timeout path also restores); studio-post.py runs for
+    real, so state really does flip to waiting/<qid> first."""
+    import studio.hooks.permission_bridge as pb
+    sys.path.insert(0, str(SCRIPTS))
+    import studio_common as sc
+    sc.reset_state(tmp_path, connector_id="c1", status="running")
+
+    real_script = pb._script
+
+    def fake_script(name, *args):
+        if name == "studio-wait.py":
+            out = subprocess.CompletedProcess(args=[], returncode=0,
+                                              stdout=wait_stdout, stderr="")
+            return out
+        return real_script(name, *args)
+
+    monkeypatch.setattr(pb, "_script", fake_script)
+
+    code = pb._main(io.StringIO(json.dumps({
+        "hook_event_name": "PermissionRequest", "cwd": str(tmp_path),
+        "tool_name": "Write", "tool_input": {"file_path": "x", "content": "y"}})))
+    assert code in (0, 2)   # decide_output's only possible exit codes
+
+    state = sc.read_state(tmp_path)
+    assert state["status"] == "running"
+    assert state["awaiting"] is None
+
+
 def test_unattached_repo_is_silent(tmp_path):
     """The common case for every repo that never runs Studio: print nothing,
     exit 0, let the terminal dialog happen."""
@@ -265,20 +347,65 @@ def test_unattached_repo_is_silent(tmp_path):
     assert (out.returncode, out.stdout, out.stderr) == (0, "", "")
 
 
-def test_malformed_stdin_is_silent(tmp_path):
+def test_malformed_stdin_is_silent():
     out = subprocess.run(
         [sys.executable, "-m", "studio.hooks.permission_bridge"],
         input="not json", capture_output=True, text=True, cwd=str(REPO_ROOT))
-    assert (out.returncode, out.stdout) == (0, "")
+    assert (out.returncode, out.stdout, out.stderr) == (0, "", "")
 
 
 def test_non_string_cwd_is_silent(tmp_path):
     """Valid JSON, wrong type: Path(12345) raises TypeError inside _read_state.
     An uncaught traceback out of the hook is undefined behaviour, not the
-    silence this hook promises — must still be exit 0, nothing on stdout."""
+    silence this hook promises — must still be exit 0, nothing on stdout.
+
+    Runs against the isolated `tmp_path`, not this checkout: a non-string cwd
+    makes _main fall back to os.getcwd(), and _run_hook now sets the
+    subprocess's real working directory to `tmp_path` for exactly this reason —
+    if it fell back to REPO_ROOT instead, a live .agentqa/studio/state.json in
+    this repo (e.g. from someone running Studio here) would make the hook post
+    a real card and block for up to WAIT_TIMEOUT_S=540s instead of returning
+    immediately."""
     out = _run_hook(tmp_path, {
         "hook_event_name": "PermissionRequest", "cwd": 12345,
         "tool_name": "Write", "tool_input": {"file_path": "x", "content": "y"}})
+    assert (out.returncode, out.stdout, out.stderr) == (0, "", "")
+
+
+def test_main_is_silent_on_non_string_cwd_beneath_the_safety_net(tmp_path, monkeypatch):
+    """Deliberately bypasses main()'s blanket `except Exception`: calls _main()
+    directly, not through the subprocess entry point, so that a stripped
+    isinstance(repo, str) guard shows up as an uncaught TypeError failing this
+    test. Mutation-verified: delete that guard in _main and this test fails with
+    `TypeError: argument should be a str or an os.PathLike object...` from
+    Path(12345) inside _read_state — whereas test_non_string_cwd_is_silent
+    (above) still passes, because main()'s except Exception catches that same
+    TypeError and returns 0 regardless.
+
+    Chdir's into an isolated tmp_path first, for the same reason
+    test_non_string_cwd_is_silent does: _main's os.getcwd() fallback must not
+    depend on this repo's own .agentqa/studio/state.json."""
+    monkeypatch.chdir(tmp_path)
+    payload = json.dumps({
+        "hook_event_name": "PermissionRequest", "cwd": 12345,
+        "tool_name": "Write", "tool_input": {"file_path": "x", "content": "y"}})
+    assert _main(io.StringIO(payload)) == 0
+
+
+def test_runs_as_the_direct_script_path_hooks_json_invokes(tmp_path):
+    """hooks/hooks.json runs this hook as `python3 <absolute path>` — a direct
+    script invocation — while every other subprocess test here uses
+    `python3 -m studio.hooks.permission_bridge`. The two can resolve imports
+    differently, so only this test exercises the actual production invocation.
+    Also runs from a foreign cwd (an isolated tmp_path, not REPO_ROOT) to prove
+    it does not depend on being launched from inside the source tree."""
+    script = REPO_ROOT / "studio" / "hooks" / "permission_bridge.py"
+    out = subprocess.run(
+        [sys.executable, str(script)],
+        input=json.dumps({
+            "hook_event_name": "PermissionRequest", "cwd": str(tmp_path),
+            "tool_name": "Write", "tool_input": {"file_path": "x", "content": "y"}}),
+        capture_output=True, text=True, cwd=str(tmp_path), timeout=30)
     assert (out.returncode, out.stdout, out.stderr) == (0, "", "")
 
 
