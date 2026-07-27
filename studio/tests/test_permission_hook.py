@@ -131,6 +131,15 @@ def test_reject_without_a_note_still_gives_a_reason():
     assert code == 2 and err.strip() == DEFAULT_REJECT_REASON
 
 
+def test_reject_with_non_string_note_does_not_raise():
+    """Non-string notes reach here via POST /api/studio/reply (studio/server.py:164-171)
+    which spreads the request payload into the reply record unvalidated. protocol.validate()
+    checks reply_to but never checks note's type. This is a real path, not hypothetical."""
+    _, err, code = decide_output(
+        {"status": "answered", "record": {"decision": "reject", "note": 123}})
+    assert code == 2 and isinstance(err, str)
+
+
 def test_timeout_defers_to_the_terminal():
     assert decide_output({"status": "waiting"}) == ("", "", 0)
 

@@ -90,6 +90,6 @@ def decide_output(wait_result):
     if decision == "approve":
         return (json.dumps(_ALLOW), "", 0)
     if decision == "reject":
-        note = (record.get("note") or "").strip() or DEFAULT_REJECT_REASON
+        note = (str(record.get("note") or "")).strip() or DEFAULT_REJECT_REASON
         return ("", note, 2)
     return _DEFER
