@@ -134,6 +134,7 @@ skills/
 │   └── tests/            # memory store tests
 └── agentqa-studio/       # the browser connector (transport adapter over agentqa-write-test)
     ├── SKILL.md          # attach → watch mailbox → run write-test → route checkpoints to cards
+    ├── references/       # requirements-doc.md (uploaded spec), troubleshooting.md — read on demand
     ├── scripts/          # studio_common.py (protocol), studio-attach/-wait/-post/-detach.py
     └── tests/            # protocol + script tests (validated against studio/protocol_v1.json)
 docs/                     # the documentation this README links to
