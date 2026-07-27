@@ -108,7 +108,21 @@ in the repo's agent docs (`CLAUDE.md`/`AGENTS.md`) to `.agentqa/memory/` — the
 memory is the home for narrative knowledge; `config.yml` stays the home for
 structured facts. Do not duplicate facts across the two.
 
-## 5. Reset policy outside pytest
+## 5. Scaffold the permission allowlist
+
+AgentQA writes to `.agentqa/` and the test dir on every run. Without an allowlist
+each of those writes raises a permission dialog in the terminal — invisible to
+anyone driving the run from the Studio dashboard. Add the rules with:
+
+```bash
+scripts/scaffold-permissions.sh            # from the host repo root
+```
+
+It merges into any existing `.claude/settings.json` and is safe to re-run.
+Writes outside those two areas still ask, which is the point: during a Studio
+session they become a card in the browser.
+
+## 6. Reset policy outside pytest
 
 `conftest.py` handles pytest runs. Launches that don't go through pytest — the
 `agent-device open` calls `/agentqa-write-test` makes while exploring — reset via
@@ -132,7 +146,7 @@ nothing hands the next test yesterday's state, and the cost lands much later, as
 a flaky test nobody traces back to here. If a caller genuinely does not mind,
 `|| true` says so explicitly.
 
-## 6. Verify
+## 7. Verify
 
 `scripts/setup-all.sh --check` should end all green, and
 `pytest --collect-only` inside the test dir should succeed (0 tests is fine).
@@ -140,3 +154,4 @@ a flaky test nobody traces back to here. If a caller genuinely does not mind,
   followed by `memory lint: OK` — it runs `agentqa-write-test`'s `memory-lint.py`
   over the store, because a structurally complete store can still be full of
   notes Recall can't use.
+- `scripts/scaffold-permissions.sh --check` should print `permission scaffold: OK`
