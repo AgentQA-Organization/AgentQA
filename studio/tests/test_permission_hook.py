@@ -6,7 +6,14 @@ an explicit human click has to come out as ("", "", 0) — print nothing, exit 0
 leave the terminal dialog alone.
 """
 import json
+import subprocess
+import sys
+import threading
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
 
 from studio.hooks.permission_bridge import (
     DEFAULT_REJECT_REASON, DIFF_LIMIT, HEARTBEAT_MAX_AGE_S,
@@ -156,3 +163,103 @@ def test_unknown_decision_defers_rather_than_guessing():
 
 def test_garbage_wait_result_defers():
     assert decide_output({}) == ("", "", 0)
+
+
+# ---- end to end, through a real mailbox ----------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPTS = REPO_ROOT / "skills" / "agentqa-studio" / "scripts"
+
+
+@pytest.fixture()
+def attached_repo(tmp_path):
+    """A repo whose mailbox looks like a live /agentqa-studio session."""
+    sys.path.insert(0, str(SCRIPTS))
+    import studio_common as sc
+    sc.reset_state(tmp_path, connector_id="c1", status="running")
+    return tmp_path
+
+
+def _answer_when_asked(repo, decision, note=None, timeout=20):
+    """Play the browser: wait for the card, then post the reply the tester would."""
+    sys.path.insert(0, str(SCRIPTS))
+    import studio_common as sc
+
+    def run():
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            for rec in sc.read_jsonl(sc.studio_dir(repo) / "outbox.jsonl"):
+                if rec.get("type") == "question" and rec.get("subtype") == "permission":
+                    reply = {"v": 1, "id": sc.new_id(), "ts": sc.now_ts(),
+                             "type": "reply", "reply_to": rec["id"],
+                             "decision": decision}
+                    if note:
+                        reply["note"] = note
+                    sc.append_line(sc.studio_dir(repo) / "inbox.jsonl", reply)
+                    return
+            time.sleep(0.05)
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    return t
+
+
+def _run_hook(repo, payload):
+    return subprocess.run(
+        [sys.executable, "-m", "studio.hooks.permission_bridge"],
+        input=json.dumps(payload), capture_output=True, text=True,
+        cwd=str(REPO_ROOT))
+
+
+def test_approve_end_to_end(attached_repo):
+    _answer_when_asked(attached_repo, "approve")
+    out = _run_hook(attached_repo, {
+        "hook_event_name": "PermissionRequest", "cwd": str(attached_repo),
+        "tool_name": "Edit",
+        "tool_input": {"file_path": "Home.swift",
+                       "old_string": "a", "new_string": "b"}})
+    assert out.returncode == 0, out.stderr
+    assert json.loads(out.stdout)["hookSpecificOutput"]["decision"]["behavior"] == "allow"
+
+
+def test_reject_end_to_end_carries_the_note(attached_repo):
+    _answer_when_asked(attached_repo, "reject", note="edit the page object")
+    out = _run_hook(attached_repo, {
+        "hook_event_name": "PermissionRequest", "cwd": str(attached_repo),
+        "tool_name": "Edit",
+        "tool_input": {"file_path": "Home.swift",
+                       "old_string": "a", "new_string": "b"}})
+    assert out.returncode == 2
+    assert out.stdout == ""
+    assert "edit the page object" in out.stderr
+
+
+def test_card_reaches_the_outbox(attached_repo):
+    _answer_when_asked(attached_repo, "approve")
+    _run_hook(attached_repo, {
+        "hook_event_name": "PermissionRequest", "cwd": str(attached_repo),
+        "tool_name": "Write",
+        "tool_input": {"file_path": "t.py", "content": "import pytest"}})
+    sys.path.insert(0, str(SCRIPTS))
+    import studio_common as sc
+    cards = [r for r in sc.read_jsonl(sc.studio_dir(attached_repo) / "outbox.jsonl")
+             if r.get("subtype") == "permission"]
+    assert len(cards) == 1
+    assert "t.py" in cards[0]["prompt"]
+    assert "import pytest" in cards[0]["diff"]
+
+
+def test_unattached_repo_is_silent(tmp_path):
+    """The common case for every repo that never runs Studio: print nothing,
+    exit 0, let the terminal dialog happen."""
+    out = _run_hook(tmp_path, {
+        "hook_event_name": "PermissionRequest", "cwd": str(tmp_path),
+        "tool_name": "Write", "tool_input": {"file_path": "x", "content": "y"}})
+    assert (out.returncode, out.stdout, out.stderr) == (0, "", "")
+
+
+def test_malformed_stdin_is_silent(tmp_path):
+    out = subprocess.run(
+        [sys.executable, "-m", "studio.hooks.permission_bridge"],
+        input="not json", capture_output=True, text=True, cwd=str(REPO_ROOT))
+    assert (out.returncode, out.stdout) == (0, "")

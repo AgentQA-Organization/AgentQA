@@ -10,7 +10,11 @@ Every path that is not an explicit human click prints nothing and exits 0, which
 leaves Claude Code's own dialog exactly as it would have been.
 """
 import json
+import os
+import subprocess
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 # The heartbeat only bumps when the agent posts or waits, so it goes quiet for
 # the length of a tool call. The window has to outlast a slow build or a long
@@ -18,6 +22,16 @@ from datetime import datetime, timezone
 HEARTBEAT_MAX_AGE_S = 900
 DIFF_LIMIT = 2000
 DEFAULT_REJECT_REASON = "Rejected from the AgentQA Studio dashboard."
+
+# Resolve the connector scripts from the plugin root when the hook runs inside an
+# installed plugin, and from the source tree otherwise, so the same file works in
+# a checkout and in ~/.claude/plugins.
+_PLUGIN_ROOT = Path(os.environ.get("CLAUDE_PLUGIN_ROOT")
+                    or Path(__file__).resolve().parents[2])
+_SCRIPTS = _PLUGIN_ROOT / "skills" / "agentqa-studio" / "scripts"
+
+WAIT_TIMEOUT_S = 540      # under the hook's own 600s cap, so we return rather
+                          # than get killed mid-wait
 
 _ALLOW = {"hookSpecificOutput": {"hookEventName": "PermissionRequest",
                                  "decision": {"behavior": "allow"}}}
@@ -93,3 +107,62 @@ def decide_output(wait_result):
         note = (str(record.get("note") or "")).strip() or DEFAULT_REJECT_REASON
         return ("", note, 2)
     return _DEFER
+
+
+def _read_state(repo):
+    path = Path(repo) / ".agentqa" / "studio" / "state.json"
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return {}
+
+
+def _script(name, *args):
+    out = subprocess.run([sys.executable, str(_SCRIPTS / name)] + list(args),
+                         capture_output=True, text=True)
+    return out
+
+
+def main(argv=None, stdin=None):
+    raw = (stdin or sys.stdin).read()
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        return 0                       # not our shape — leave the dialog alone
+    repo = event.get("cwd") or os.getcwd()
+    state = _read_state(repo)
+    if not should_bridge(state):
+        return 0
+    connector = state.get("connector_id")
+
+    prompt, diff = describe_tool(event.get("tool_name") or "a tool",
+                                 event.get("tool_input"))
+    posted = _script("studio-post.py", str(repo), "question",
+                     "--kind", "review", "--subtype", "permission",
+                     "--prompt", prompt, "--diff", diff,
+                     "--connector", connector)
+    if posted.returncode != 0:         # superseded (3) or a broken mailbox
+        return 0
+    qid = posted.stdout.strip()
+    if not qid:
+        return 0
+
+    waited = _script("studio-wait.py", str(repo), "--reply-to", qid,
+                     "--timeout", str(WAIT_TIMEOUT_S), "--connector", connector)
+    try:
+        result = json.loads(waited.stdout.strip() or "{}")
+    except ValueError:
+        result = {}
+
+    out, err, code = decide_output(result)
+    if out:
+        sys.stdout.write(out)
+    if err:
+        sys.stderr.write(err)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
