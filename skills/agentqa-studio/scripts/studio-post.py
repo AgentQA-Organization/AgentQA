@@ -44,7 +44,7 @@ def main(argv=None):
     q = sub.add_parser("question", parents=[common])
     q.add_argument("--kind", required=True, choices=["form", "confirm", "review"])
     q.add_argument("--subtype", required=True,
-                   choices=["clarify", "ask", "build", "review"])
+                   choices=["clarify", "ask", "build", "review", "permission"])
     q.add_argument("--prompt", required=True)
     q.add_argument("--questions", default=None, help="JSON array for form questions")
     q.add_argument("--diff", default=None)

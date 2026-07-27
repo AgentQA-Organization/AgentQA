@@ -14,7 +14,7 @@ PROTOCOL_VERSION = 1
 INBOX_TYPES = frozenset({"job", "reply"})
 OUTBOX_TYPES = frozenset({"progress", "question", "result", "error"})
 QUESTION_KINDS = frozenset({"form", "confirm", "review"})
-QUESTION_SUBTYPES = frozenset({"clarify", "ask", "build", "review"})
+QUESTION_SUBTYPES = frozenset({"clarify", "ask", "build", "review", "permission"})
 RESULT_STATUSES = frozenset({"green", "abandoned"})
 
 

@@ -47,3 +47,12 @@ def test_validate_rejects_bad_records():
     ]:
         with pytest.raises(protocol.ProtocolError):
             protocol.validate(bad)
+
+
+def test_permission_subtype_is_valid():
+    """The permission bridge posts questions with this subtype; validate() must
+    accept them or the hook's post is rejected at the mailbox boundary."""
+    rec = {"v": 1, "id": "qp", "ts": "2026-07-27T00:00:00Z", "type": "question",
+           "kind": "review", "subtype": "permission",
+           "prompt": "Agent wants to edit Home.swift"}
+    assert protocol.validate(rec) is rec

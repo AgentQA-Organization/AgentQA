@@ -440,7 +440,7 @@ async function sendReply(payload) {
 // an `ask` (a permission prompt / OTP / springboard pop-up the phone put up) read
 // as "Clarify" and looked like a stray requirements question. Subtype wins; kind
 // stays as the fallback for a subtype the UI has not learned yet.
-const CARD_SUBTYPE_LABEL = { clarify: "Clarify", ask: "System dialog", build: "Build step", review: "Review" };
+const CARD_SUBTYPE_LABEL = { clarify: "Clarify", ask: "System dialog", build: "Build step", review: "Review", permission: "Permission" };
 const CARD_KIND_LABEL = { form: "Clarify", confirm: "Build step", review: "Review" };
 
 function cardLabel(rec) {
