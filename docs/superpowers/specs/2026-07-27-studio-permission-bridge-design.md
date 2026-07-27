@@ -138,15 +138,47 @@ written for the previous bug catches this one before it ships.
 - `diff` — `old_string` → `new_string` for `Edit`; the head of `content` for
   `Write`; the command for `Bash`. Kept short: step-8 Review carries the full diff.
 
-### Reply mapping
+### Reply mapping — and how a rejection carries its reason
 
-`approve` → `{"behavior": "allow"}`; `reject` → `{"behavior": "deny"}`.
+The two outcomes leave the hook by different doors, on purpose:
 
-**Open item to verify during implementation:** the documented `decision` object
-carries `behavior`, `updatedInput`, and `addPermissionRule` but no reason field
-(unlike `PreToolUse`'s `permissionDecisionReason`), so a rejection note may not
-reach the agent directly. Fallback: the hook posts the note as a `progress` record,
-which the agent reads when it resumes. To be settled by experiment, not assumption.
+```python
+if decision == "reject":
+    sys.stderr.write(note or "Tester rejected this write from the Studio dashboard.")
+    sys.exit(2)          # documented: PermissionRequest + exit 2 denies the permission
+print(json.dumps({"hookSpecificOutput": {
+    "hookEventName": "PermissionRequest",
+    "decision": {"behavior": "allow"}}}))
+sys.exit(0)
+```
+
+Approve returns `{"behavior": "allow"}` as JSON. **Reject exits 2 with the note on
+stderr**, rather than returning `{"behavior": "deny"}`, because the `decision`
+object has no reason field — it carries `behavior`, `updatedInput`, and
+`addPermissionRule` only, unlike `PreToolUse`'s `permissionDecisionReason`. For
+hook events that can block, stderr is the documented channel for the blocking
+reason, so exit 2 is how a rejection says *why*. Without it the agent receives a
+bare "the user doesn't want to proceed" and has to ask the tester a question they
+already answered.
+
+**Spike this first.** The exit-code table states plainly that `PermissionRequest`
++ exit 2 denies the permission, so the denial itself is certain. What the table
+does not state for this event specifically is whether stderr reaches the model —
+it names `PostToolUse` and `PostToolUseFailure` as "shown to Claude" without
+listing the blocking events. Task 1 of the implementation plan is a throwaway hook
+that rejects with a recognisable sentinel string, run against a real session, to
+observe whether that string appears in the agent's transcript. Everything else is
+unaffected by the answer; only the fallback below depends on it.
+
+**If stderr does not reach the model**, add a `studio-read.py --last-reply` and one
+line in the connector SKILL.md: on a rejected tool call during a Studio run, read
+the tester's note from the reply you were just given rather than asking again.
+Build that only if the spike shows it is needed.
+
+Independently of either, the hook posts the decision to the outbox as a `progress`
+record. That is for the dashboard's own transcript — so the tester's decision and
+reason are visible in the run history — **not** a delivery mechanism to the agent.
+The outbox is the agent→browser direction; the agent never reads it.
 
 ### Deliberately out of scope for v1
 
@@ -211,8 +243,9 @@ tests UI decisions and `test_studio_lifecycle.py` tests mailbox flows.
 |---|---|
 | no agent attached | nothing → terminal dialog |
 | `state.json` missing or malformed | nothing → terminal dialog |
-| attached, tester clicks Approve | `{"behavior": "allow"}` |
-| attached, tester clicks Reject | `{"behavior": "deny"}` |
+| attached, tester clicks Approve | `{"behavior": "allow"}`, exit 0 |
+| attached, tester clicks Reject | note on stderr, exit 2 |
+| attached, Reject with an empty note | a default reason on stderr, exit 2 |
 | no reply within 540s | nothing → terminal dialog |
 | connector superseded mid-wait | nothing → terminal dialog |
 
@@ -242,6 +275,8 @@ agent; any change to `agentqa-write-test`'s flow; the sandbox.
 3. Hook reaches the browser through the existing `studio-post.py` / `studio-wait.py`,
    not HTTP and not direct file writes — the mailbox stays the single source of truth.
 4. Every failure path falls back to the terminal dialog; none auto-allows.
+   Approve leaves as JSON on exit 0; reject leaves as exit 2 with the reason on
+   stderr, which is the only channel `PermissionRequest` offers for a reason.
 5. Auto-allowed: `.agentqa/**` and `<test_dir>/**`. Gated: app source and
    everything else.
 6. Hook ships in the plugin; allowlist is scaffolded per repo by `/agentqa-init init`.
