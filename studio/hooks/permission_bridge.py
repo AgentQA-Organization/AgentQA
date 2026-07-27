@@ -52,7 +52,13 @@ def should_bridge(state, now=None):
     """True when a live Studio connector is there to show the card to."""
     if not isinstance(state, dict):
         return False
-    if not state.get("attached") or not state.get("connector_id"):
+    if not state.get("attached"):
+        return False
+    connector_id = state.get("connector_id")
+    if not isinstance(connector_id, str) or not connector_id:
+        # A non-string id (a corrupt state.json, say) cannot match a live
+        # connector anyway, and would otherwise crash subprocess.run once it
+        # reaches _script() as an argv element.
         return False
     stamped = _parse_ts(state.get("heartbeat_ts"))
     if stamped is None:
@@ -126,12 +132,28 @@ def _script(name, *args):
 
 
 def main(argv=None, stdin=None):
+    try:
+        return _main(argv, stdin)
+    except Exception:
+        # A safety net, not a substitute for the guards above: for this hook,
+        # falling back to Claude Code's own dialog is the only acceptable
+        # failure mode, so an error none of the targeted checks anticipated
+        # must still end in silence rather than an uncaught traceback that
+        # would otherwise leave the terminal's prompt in an undefined state.
+        return 0
+
+
+def _main(argv, stdin):
     raw = (stdin or sys.stdin).read()
     try:
         event = json.loads(raw)
     except ValueError:
         return 0                       # not our shape — leave the dialog alone
-    repo = event.get("cwd") or os.getcwd()
+    repo = event.get("cwd") if isinstance(event, dict) else None
+    if not isinstance(repo, str) or not repo:
+        # A missing or wrong-typed cwd (e.g. a number) would otherwise reach
+        # Path(repo) in _read_state and raise TypeError.
+        repo = os.getcwd()
     state = _read_state(repo)
     if not should_bridge(state):
         return 0

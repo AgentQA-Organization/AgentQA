@@ -205,10 +205,17 @@ def _answer_when_asked(repo, decision, note=None, timeout=20):
 
 
 def _run_hook(repo, payload):
-    return subprocess.run(
-        [sys.executable, "-m", "studio.hooks.permission_bridge"],
-        input=json.dumps(payload), capture_output=True, text=True,
-        cwd=str(REPO_ROOT))
+    try:
+        return subprocess.run(
+            [sys.executable, "-m", "studio.hooks.permission_bridge"],
+            input=json.dumps(payload), capture_output=True, text=True,
+            cwd=str(REPO_ROOT), timeout=30)
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            "hook did not exit within 30s — the mailbox wiring likely "
+            "regressed, e.g. the browser-thread's reply never reached the "
+            "card studio-post.py posted, so studio-wait.py just kept polling "
+            "toward its production WAIT_TIMEOUT_S=540 instead")
 
 
 def test_approve_end_to_end(attached_repo):
@@ -263,3 +270,26 @@ def test_malformed_stdin_is_silent(tmp_path):
         [sys.executable, "-m", "studio.hooks.permission_bridge"],
         input="not json", capture_output=True, text=True, cwd=str(REPO_ROOT))
     assert (out.returncode, out.stdout) == (0, "")
+
+
+def test_non_string_cwd_is_silent(tmp_path):
+    """Valid JSON, wrong type: Path(12345) raises TypeError inside _read_state.
+    An uncaught traceback out of the hook is undefined behaviour, not the
+    silence this hook promises — must still be exit 0, nothing on stdout."""
+    out = _run_hook(tmp_path, {
+        "hook_event_name": "PermissionRequest", "cwd": 12345,
+        "tool_name": "Write", "tool_input": {"file_path": "x", "content": "y"}})
+    assert (out.returncode, out.stdout, out.stderr) == (0, "", "")
+
+
+def test_non_string_connector_id_in_state_is_silent(tmp_path):
+    """A corrupted state.json with connector_id as a non-string must not reach
+    subprocess.run's argv as an int — should_bridge's type guard rejects it
+    before main() ever shells out to studio-post.py."""
+    sys.path.insert(0, str(SCRIPTS))
+    import studio_common as sc
+    sc.reset_state(tmp_path, connector_id=12345, status="running")
+    out = _run_hook(tmp_path, {
+        "hook_event_name": "PermissionRequest", "cwd": str(tmp_path),
+        "tool_name": "Write", "tool_input": {"file_path": "x", "content": "y"}})
+    assert (out.returncode, out.stdout, out.stderr) == (0, "", "")
