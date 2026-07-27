@@ -522,19 +522,46 @@ function connectStream() {
   es.onerror = () => { /* browser auto-reconnects; the outbox replays on reconnect */ };
 }
 
+const HEARTBEAT_STALE_MS = 60000;
+
+// Pure: how the attach badge should read. `attached` is sticky — the agent sets it
+// on attach and only clears it on a clean detach — so a session that just ended
+// still looks attached. The heartbeat is what proves someone is home, but it is
+// only bumped by studio-wait.py's poll loop, which backs `idle` and `waiting` and
+// NOT `running` (a working agent is off driving the device for minutes with
+// nothing touching state.json). So staleness is only meaningful in the first two.
+function attachView(s, now) {
+  if (!s.attached) {
+    return { state: "disconnected", text: "No agent connected — run /agentqa-studio in Claude Code", dot: null };
+  }
+  if (s.status === "running") return { state: "running", text: "Agent working…", dot: "busy" };
+  if (s.heartbeat_ts && now - Date.parse(s.heartbeat_ts) > HEARTBEAT_STALE_MS) {
+    return {
+      state: "stale",
+      text: s.status === "waiting"
+        ? "Agent waiting (no heartbeat — may have disconnected)"
+        : "Agent went away (no heartbeat) — re-run /agentqa-studio to pick up queued jobs",
+      dot: "alert",
+    };
+  }
+  if (s.status === "waiting") return { state: "waiting", text: "Agent attached — waiting on you", dot: "alert" };
+  return { state: "idle", text: "Agent attached — idle", dot: null };
+}
+
+// True when an agent is demonstrably alive right now — used to warn at queue time.
+function agentIsLive(s) {
+  const state = attachView(s, Date.now()).state;
+  return state !== "disconnected" && state !== "stale";
+}
+
 async function pollAgentState() {
   const box = document.getElementById("agent-status");
   const label = document.getElementById("attach-label");
   const set = (state, text) => { box.className = "attach " + state; label.textContent = text; };
   try {
-    const s = await fetchJSON("/api/studio/state");
-    const stale = s.heartbeat_ts && (Date.now() - Date.parse(s.heartbeat_ts) > 60000);
-    if (!s.attached) { set("disconnected", "No agent connected — run /agentqa-studio in Claude Code"); setTabDot("agent", null); }
-    else if (s.status === "waiting") {
-      if (stale) { set("stale", "Agent waiting (no heartbeat — may have disconnected)"); setTabDot("agent", "alert"); }
-      else { set("waiting", "Agent attached — waiting on you"); setTabDot("agent", "alert"); }
-    } else if (s.status === "running") { set("running", "Agent working…"); setTabDot("agent", "busy"); }
-    else { set("idle", "Agent attached — idle"); setTabDot("agent", null); }
+    const v = attachView(await fetchJSON("/api/studio/state"), Date.now());
+    set(v.state, v.text);
+    setTabDot("agent", v.dot);
   } catch (err) {
     set("disconnected", `agent state error: ${err.message}`);
   }
@@ -554,6 +581,11 @@ async function startJob() {
     });
     ideaEl.value = "";
     logAppend(el(`<div class="prog"><span class="pdot plain"></span><span class="ptext muted">▸ queued: ${esc(idea)}</span></div>`));
+    // The mailbox accepts a job whether or not anyone is listening. Say so, or the
+    // job just sits at "queued" and reads as an agent that is quietly working.
+    if (!agentIsLive(await fetchJSON("/api/studio/state"))) {
+      appendError({ text: "Queued, but no live agent is watching the mailbox — run /agentqa-studio in Claude Code and it will pick this job up." });
+    }
     convoCount();
   } catch (err) {
     appendError({ text: err.message });

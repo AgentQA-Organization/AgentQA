@@ -60,14 +60,15 @@ installed) — don't try to write a test without them.
 
 ## The loop
 
-### 1. Attach
+### 1. Attach — then fall straight into step 2, in the same turn
 
 Boot the dashboard if it isn't already up, then attach. Booting is **best-effort**:
 the mailbox files are the source of truth, so the job still runs even if the
 viewer never comes up — never abort the run because the daemon failed to start.
 
 ```bash
-REPO="$(git rev-parse --show-toplevel)"
+# App repos need not be git repos — fall back to cwd, exactly like the launcher does.
+REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 # Best-effort: start the viewer if port 7332 is closed.
 if ! nc -z 127.0.0.1 7332 2>/dev/null; then
   agentqa-studio >/tmp/agentqa-studio.log 2>&1 &   # M1 launcher; self-resolves the repo + opens a browser
@@ -75,19 +76,31 @@ fi
 python3 scripts/studio-attach.py "$REPO"
 ```
 
-Tell the user the dashboard is at http://127.0.0.1:7332/ and that they can type
-the test idea there (or in chat — either works).
+<critical>
+**Do not end your turn after attaching.** Attaching only writes `state.json` — it
+starts nothing. The only thing that ever consumes a job is `studio-wait.py`, and
+it runs only while your turn is running. If you stop here to announce the URL and
+ask what to test, your turn ends, no waiter exists, and every idea the user types
+in the browser lands in `inbox.jsonl` and sits at **queued** forever with no agent
+to pick it up. The launcher already opened the browser for them — they do not need
+an announcement from you. Go to step 2 now, in this same turn.
+</critical>
 
 ### 2. Watch for a job
+
+If the user already gave you the test idea (as `/agentqa-studio <idea>`, or in
+chat), skip this step — the browser box and the chat are two ways to start the
+same job. Otherwise block on the mailbox:
 
 ```bash
 python3 scripts/studio-wait.py "$REPO" --job
 ```
 
-If it prints `{"status":"waiting"}`, run it again. On `{"status":"answered",…}`,
-take `record.flow_idea` as the test idea. (If the user has already told you the
-idea in chat, you can proceed with that instead of waiting — the browser box and
-the chat are two ways to start the same job.)
+On `{"status":"answered",…}` take `record.flow_idea` as the test idea and go to
+step 3. On `{"status":"waiting"}` the 8-minute poll simply timed out — **run the
+exact same command again**, in the same turn, as many times as it takes. That
+re-blocking loop is what keeps an agent alive at the dashboard while the user
+thinks; ending the turn instead is the one failure this skill must never produce.
 
 ### 3. Delegate to agentqa-write-test
 
@@ -156,12 +169,18 @@ working-layer files — you don't manage those here.
 
 ### 6. Loop or detach
 
-After a `result`, go back to step 2 and watch for the next job. When the user ends
-the session, detach so the dashboard shows the agent is gone:
+After a `result`, go back to step 2 and watch for the next job — still the same
+turn. When the user ends the session, detach so the dashboard shows the agent is
+gone rather than leaving a stale `attached: true` behind:
 
 ```bash
 python3 scripts/studio-detach.py "$REPO"
 ```
+
+**Picking up an orphaned job.** A job posted while no agent was watching is not
+lost — it stays in `inbox.jsonl`, and `job_cursor` still points before it, so the
+next attach's step-2 wait returns it immediately. If the user says the dashboard
+has been sitting at *queued*, this is the fix: attach and wait, and the job runs.
 
 ## Background
 
