@@ -9,7 +9,7 @@
     {
       "name": "agentqa",
       "description": "Agent-driven mobile UI test automation with Appium, for iOS and Android — three skills: agentqa-init (toolchain + project setup), agentqa-write-test (idea to a green Appium test, with behavioral memory), and agentqa-studio (local web dashboard + connector to drive test-writing from the browser).",
-      "version": "1.2.1",
+      "version": "1.3.0",
       "source": "./",
       "author": {
         "name": "Nguyễn Anh Tuấn",
