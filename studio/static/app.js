@@ -436,7 +436,16 @@ async function sendReply(payload) {
   });
 }
 
+// `clarify` and `ask` share kind "form", so the kind alone cannot name a card —
+// an `ask` (a permission prompt / OTP / springboard pop-up the phone put up) read
+// as "Clarify" and looked like a stray requirements question. Subtype wins; kind
+// stays as the fallback for a subtype the UI has not learned yet.
+const CARD_SUBTYPE_LABEL = { clarify: "Clarify", ask: "System dialog", build: "Build step", review: "Review" };
 const CARD_KIND_LABEL = { form: "Clarify", confirm: "Build step", review: "Review" };
+
+function cardLabel(rec) {
+  return CARD_SUBTYPE_LABEL[rec.subtype] || CARD_KIND_LABEL[rec.kind] || rec.kind;
+}
 
 function lockCard(card, summary) {
   card.querySelectorAll("input,button,textarea").forEach((n) => { n.disabled = true; });
@@ -446,7 +455,7 @@ function lockCard(card, summary) {
 }
 
 function renderCard(rec) {
-  const label = rec.subtype === "permission" ? "Permission" : (CARD_KIND_LABEL[rec.kind] || rec.kind);
+  const label = cardLabel(rec);
   const card = el(
     `<div class="msg-card"><div class="mc-head"><span class="mc-kind">${esc(label)}</span></div>` +
     `<div class="mc-body"><div class="mc-prompt">${esc(rec.prompt || "")}</div></div></div>`);

@@ -10,6 +10,8 @@ Two bugs live here, both invisible to the daemon's Python tests:
   box instead of overflowing it: cards clipped their own content, the box never
   scrolled, and the newest card could not be reached.
 """
+import json
+
 from studio.tests.jsprobe import APP_JS, call, needs_node
 
 pytestmark = needs_node
@@ -127,6 +129,75 @@ def test_headingless_document_falls_back_to_the_filename():
 def test_nothing_at_all_stays_empty():
     """An empty box and no file must not queue a nameless job."""
     assert call(IDEA, [], 'deriveIdea("", "", "")') == ""
+
+
+# ---- naming the card: an `ask` is not a `clarify` -------------------------
+#
+# The regression: card labels were keyed by `kind`, but the protocol gives
+# `clarify` and `ask` the same `kind: "form"`. So the agent's system-dialog
+# question — "a tracking prompt appeared, allow/deny/dismiss?" — arrived at the
+# dashboard wearing the word "Clarify". A tester watching for the agent to ask
+# about a permission prompt saw what looked like a stray requirements card and
+# reported the permission request as not showing up at all.
+#
+# The renderer *did* carry a special case for this, but it tested
+# `subtype === "permission"` — a subtype protocol.py's whitelist rejects, so the
+# branch could never run. Hence the consistency test at the end of this block.
+
+LABEL = ["cardLabel"]
+LABEL_CONSTS = ["CARD_SUBTYPE_LABEL", "CARD_KIND_LABEL"]
+
+
+def label_of(subtype, kind="form"):
+    return call(LABEL, LABEL_CONSTS, 'cardLabel({subtype: %s, kind: "%s"})'
+                % (json.dumps(subtype), kind))
+
+
+def test_ask_card_is_not_labelled_clarify():
+    """The exact bug. Two different questions must not share one name."""
+    assert label_of("ask") != "Clarify"
+
+
+def test_ask_card_names_the_system_dialog():
+    """The tester has to know the agent is blocked on a dialog the phone put up,
+    not on a requirements question, because the two need different answers."""
+    assert "system" in label_of("ask").lower()
+
+
+def test_clarify_card_still_reads_clarify():
+    assert label_of("clarify") == "Clarify"
+
+
+def test_build_and_review_keep_their_labels():
+    assert label_of("build", "confirm") == "Build step"
+    assert label_of("review", "review") == "Review"
+
+
+def test_unknown_subtype_falls_back_to_the_kind_label():
+    """A subtype added to the protocol before the UI learns its name must still
+    render as something — falling back to the kind beats a blank chip."""
+    assert label_of("brand-new-thing") == "Clarify"
+
+
+def test_missing_subtype_falls_back_to_the_kind_label():
+    assert call(LABEL, LABEL_CONSTS, 'cardLabel({kind: "confirm"})') == "Build step"
+
+
+def test_unknown_kind_shows_itself_rather_than_nothing():
+    assert call(LABEL, LABEL_CONSTS, 'cardLabel({kind: "mystery"})') == "mystery"
+
+
+def test_every_protocol_subtype_has_a_label():
+    """The guard for the class of bug this block came from: the renderer named a
+    subtype ("permission") the protocol never emits, so its branch was dead and
+    nobody noticed. Labels and the protocol whitelist must agree."""
+    from studio.protocol import QUESTION_SUBTYPES
+
+    labelled = set(call([], ["CARD_SUBTYPE_LABEL"], "Object.keys(CARD_SUBTYPE_LABEL)"))
+    assert not QUESTION_SUBTYPES - labelled, (
+        "question subtypes with no card label: %s" % sorted(QUESTION_SUBTYPES - labelled))
+    assert not labelled - QUESTION_SUBTYPES, (
+        "card labels for subtypes the protocol rejects: %s" % sorted(labelled - QUESTION_SUBTYPES))
 
 
 # ---- the CSS invariant the scroll bug came from --------------------------

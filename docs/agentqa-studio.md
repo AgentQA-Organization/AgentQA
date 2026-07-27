@@ -73,7 +73,7 @@ any device prompts, become cards instead of terminal questions:
 | Card | When |
 |---|---|
 | **Clarify** | every test — confirm what *success*, *failure*, and *blockers* look like (pre-filled from your product docs when available) |
-| **Permission / system prompt** | when the app raises one during exploration (Allow / Deny / Dismiss) |
+| **System dialog** | when the phone raises a permission prompt, OTP, or springboard pop-up during exploration (Allow / Deny / Dismiss) |
 | **Build** | only when `build.policy: human` — "I've built & installed" after you build the app-code changes |
 | **Review** | every test — approve or reject the additions-only diff and the generated test |
 
