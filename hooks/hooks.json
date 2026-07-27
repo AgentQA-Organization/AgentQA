@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/studio/hooks/permission_bridge.py\"",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}

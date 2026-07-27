@@ -293,3 +293,30 @@ def test_non_string_connector_id_in_state_is_silent(tmp_path):
         "hook_event_name": "PermissionRequest", "cwd": str(tmp_path),
         "tool_name": "Write", "tool_input": {"file_path": "x", "content": "y"}})
     assert (out.returncode, out.stdout, out.stderr) == (0, "", "")
+
+
+# ---- plugin registration -------------------------------------------------
+
+def test_plugin_registers_the_permission_hook():
+    cfg = json.loads((REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    entries = cfg["hooks"]["PermissionRequest"]
+    assert entries, "PermissionRequest must be registered or the bridge never runs"
+    command = entries[0]["hooks"][0]["command"]
+    assert "${CLAUDE_PLUGIN_ROOT}" in command, \
+        "an absolute path would break for every user but the author"
+    assert "permission_bridge" in command
+
+
+def test_hook_matcher_covers_every_tool():
+    """PermissionRequest only fires when a dialog would appear, so narrowing by
+    tool name would drop exactly the unusual prompts a watching tester needs."""
+    cfg = json.loads((REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    assert cfg["hooks"]["PermissionRequest"][0]["matcher"] == "*"
+
+
+def test_hook_timeout_outlasts_the_wait():
+    """A hook killed mid-wait leaves the outcome to the harness. It has to be
+    able to return its own answer."""
+    from studio.hooks.permission_bridge import WAIT_TIMEOUT_S
+    cfg = json.loads((REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    assert cfg["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"] > WAIT_TIMEOUT_S
