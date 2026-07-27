@@ -144,7 +144,7 @@ install.sh                # the cross-harness installer (raw-copy, for harnesses
 
 ## Versioning
 
-Releases are git-tagged with SemVer (`v1.0.0`); pin the installer with
+Releases are git-tagged with SemVer (`v1.3.1`); pin the installer with
 `--ref v<x.y.z>`. Details in [`docs/installation.md`](docs/installation.md#versioning).
 
 ## License

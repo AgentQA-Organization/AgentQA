@@ -4,7 +4,7 @@ description: Install and validate the agent-driven mobile UI testing toolchain (
 license: MIT
 compatibility: iOS needs macOS with Xcode + an iOS simulator; Android needs the Android SDK (adb, an emulator or device) + a JDK, on macOS or Linux. Both need Node.js and Python 3.9+; npm network access for installs.
 metadata:
-  agentqa-init-version: "1.3.0"
+  agentqa-init-version: "1.3.1"
 ---
 
 # agentqa-init — toolchain setup & project configuration

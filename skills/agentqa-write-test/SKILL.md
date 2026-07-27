@@ -4,7 +4,7 @@ description: Turn a natural-language test-case idea into a reviewed, passing App
 license: MIT
 compatibility: iOS (macOS + Xcode + a simulator) or Android (Android SDK + an emulator/device + a JDK); needs the toolchain from /agentqa-init setup and a project configured by /agentqa-init init
 metadata:
-  agentqa-write-test-version: "1.3.0"
+  agentqa-write-test-version: "1.3.1"
 ---
 
 # agentqa-write-test — idea → identifiers → Appium test
