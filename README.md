@@ -139,6 +139,7 @@ skills/
     └── tests/            # protocol + script tests (validated against studio/protocol_v1.json)
 docs/                     # the documentation this README links to
 studio/                   # AgentQA Studio daemon (M1 viewer + M2 mailbox): stdlib http.server + vanilla-JS UI
+hooks/                    # plugin hooks: PermissionRequest -> Studio permission card
 agentqa-write-test-workspace/  # eval harness: mock app repo, PATH shims, graders (dev-only)
 install.sh                # the cross-harness installer (raw-copy, for harnesses without marketplace support)
 ```

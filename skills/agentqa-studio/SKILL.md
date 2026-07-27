@@ -54,6 +54,11 @@ land in *their* transcript. Say one line to the user, that a newer
 `/agentqa-studio` session took over and this one is standing down, and end your turn.
 </critical>
 
+Claude Code's own permission dialogs are bridged separately, by a plugin hook
+rather than by you: when a write needs approval it becomes a Permission card in
+the same conversation. You do nothing to make that happen, and a rejection comes
+back to you as an ordinary tool rejection carrying the tester's reason.
+
 ## Prerequisites
 
 `.agentqa/config.yml` and a scaffolded `.agentqa/memory/`. If either is missing,

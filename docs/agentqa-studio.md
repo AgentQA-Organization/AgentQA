@@ -74,8 +74,16 @@ any device prompts, become cards instead of terminal questions:
 |---|---|
 | **Clarify** | every test — confirm what *success*, *failure*, and *blockers* look like (pre-filled from your product docs when available) |
 | **System dialog** | when the phone raises a permission prompt, OTP, or springboard pop-up during exploration (Allow / Deny / Dismiss) |
+| **Permission** | when Claude Code would otherwise raise a permission dialog in the terminal — approve or reject the write, with a note the agent receives |
 | **Build** | only when `build.policy: human` — "I've built & installed" after you build the app-code changes |
 | **Review** | every test — approve or reject the additions-only diff and the generated test |
+
+**Why some writes never ask.** `/agentqa-init init` allowlists `.agentqa/**` and
+your `test_dir`, because those are AgentQA's own working area and the step-8
+Review card already shows you their diff before anything is kept. Everything else
+— app source, or any path outside those two — raises a Permission card. If no
+agent is attached to Studio, nothing changes: the prompt appears in the terminal
+exactly as before.
 
 ---
 
