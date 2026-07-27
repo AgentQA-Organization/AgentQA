@@ -33,8 +33,14 @@ wait = _load("studio-wait.py")
 
 
 def _attach(tmp_path, capsys):
+    return _attach_reporting(tmp_path, capsys)[0]
+
+
+def _attach_reporting(tmp_path, capsys):
+    """Attach, returning (connector id, the stderr story of what it displaced)."""
     assert attach.main([str(tmp_path)]) == 0
-    return capsys.readouterr().out.strip()
+    captured = capsys.readouterr()
+    return captured.out.strip(), captured.err
 
 
 def _inbox(tmp_path):
@@ -180,6 +186,49 @@ def test_attach_drops_stale_replies(tmp_path, capsys):
                    sc.record("reply", reply_to="q1", decision="approve"))
     _attach(tmp_path, capsys)
     assert wait._find_reply(tmp_path, "q1") is None
+
+
+def _upload(tmp_path, name, text="# spec\n"):
+    d = sc.studio_dir(tmp_path) / "uploads"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(text, encoding="utf-8")
+    return {"name": name, "path": ".agentqa/studio/uploads/%s" % name, "chars": len(text)}
+
+
+def test_attach_keeps_the_upload_a_carried_job_still_needs(tmp_path, capsys):
+    """The job survives the takeover, so the document it was queued with has to
+    survive with it — a carried job pointing at a deleted file is worse than
+    dropping the job outright."""
+    _attach(tmp_path, capsys)
+    req = _upload(tmp_path, "srd-login.md")
+    sc.append_line(sc.studio_dir(tmp_path) / "inbox.jsonl",
+                   sc.record("job", flow_idea="log in", requirements=req))
+    _attach(tmp_path, capsys)
+
+    [job] = [r for r in _inbox(tmp_path) if r["type"] == "job"]
+    assert job["requirements"]["name"] == "srd-login.md"
+    assert (tmp_path / job["requirements"]["path"]).is_file()
+
+
+def test_attach_prunes_the_upload_of_a_cancelled_job(tmp_path, capsys):
+    _attach(tmp_path, capsys)
+    req = _upload(tmp_path, "old-spec.md")
+    job = sc.record("job", flow_idea="ran already", requirements=req)
+    sc.append_line(sc.studio_dir(tmp_path) / "inbox.jsonl", job)
+    sc.write_state(tmp_path, job_cursor=job["id"])     # already claimed
+    _, err = _attach_reporting(tmp_path, capsys)
+
+    assert not (tmp_path / req["path"]).exists()
+    assert "pruned 1" in err
+
+
+def test_carried_job_announces_its_requirements_file(tmp_path, capsys):
+    _attach(tmp_path, capsys)
+    req = _upload(tmp_path, "checkout.md")
+    sc.append_line(sc.studio_dir(tmp_path) / "inbox.jsonl",
+                   sc.record("job", flow_idea="guest checkout", requirements=req))
+    _attach(tmp_path, capsys)
+    assert any("checkout.md" in (r.get("text") or "") for r in _outbox(tmp_path))
 
 
 def test_carried_job_is_announced_in_the_new_transcript(tmp_path, capsys):

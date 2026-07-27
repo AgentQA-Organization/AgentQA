@@ -2,6 +2,7 @@
   "version": 1,
   "inbox": {
     "job": {"v": 1, "id": "j1", "ts": "2026-07-25T10:00:00Z", "type": "job", "flow_idea": "log in with valid credentials"},
+    "job_with_requirements": {"v": 1, "id": "j2", "ts": "2026-07-25T10:00:00Z", "type": "job", "flow_idea": "log in with valid credentials", "requirements": {"name": "SRD-login.md", "path": ".agentqa/studio/uploads/ab12cd34-SRD-login.md", "chars": 4210}},
     "reply_form": {"v": 1, "id": "r1", "ts": "2026-07-25T10:01:00Z", "type": "reply", "reply_to": "q1", "answers": {"success": "lands on the home tab", "failure": "inline error under the field", "blockers": "none", "entry": "welcome screen"}},
     "reply_build": {"v": 1, "id": "r2", "ts": "2026-07-25T10:05:00Z", "type": "reply", "reply_to": "q2", "decision": "built"},
     "reply_review": {"v": 1, "id": "r3", "ts": "2026-07-25T10:09:00Z", "type": "reply", "reply_to": "q3", "decision": "approve", "note": null}

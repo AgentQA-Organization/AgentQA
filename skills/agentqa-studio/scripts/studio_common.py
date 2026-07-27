@@ -184,6 +184,30 @@ def archive_mailbox(repo_root):
     return dest
 
 
+def prune_uploads(repo_root, keep_jobs):
+    """Delete requirements uploads no surviving job points at; return the count.
+
+    Uploads are deliberately *not* archived with the mailbox: a job that carries
+    forward still has to be able to open the document it was queued with. So
+    they are cleaned by reachability instead — anything the new inbox does not
+    reference belonged to the session that was just replaced.
+    """
+    d = studio_dir(repo_root) / "uploads"
+    if not d.is_dir():
+        return 0
+    keep = set()
+    for job in keep_jobs:
+        req = job.get("requirements") or {}
+        if req.get("path"):
+            keep.add(Path(str(req["path"])).name)
+    removed = 0
+    for f in sorted(d.iterdir()):
+        if f.is_file() and f.name not in keep:
+            f.unlink()
+            removed += 1
+    return removed
+
+
 def unconsumed_jobs(records, job_cursor):
     """The jobs in `records` that no session ever claimed.
 

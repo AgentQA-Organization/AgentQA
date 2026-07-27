@@ -339,7 +339,74 @@ main { max-width: 1024px; margin: 0 auto; padding: 26px 20px 60px; }
 .step-sep { width: 10px; height: 1px; background: var(--border-strong); }
 .step-sep.done { background: var(--accent); opacity: 0.5; }
 
+.job-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.help-btn {
+  font: inherit; font-size: 11.5px; font-weight: 500; padding: 3px 10px;
+  border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--raised); color: var(--sub);
+  transition: color 0.15s, border-color 0.15s;
+}
+.help-btn:hover { color: var(--fg); border-color: var(--muted); }
+
 .job-form { display: flex; gap: 8px; }
+
+/* ---- Requirements attachment ---------------------------------- */
+#job-card.dropping { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.attach-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.attach-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; padding: 5px 11px; border-radius: 8px;
+  border: 1px dashed var(--border-strong); color: var(--sub); cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.attach-btn:hover { color: var(--fg); border-color: var(--primary); }
+.attach-hint { font-size: 12px; color: var(--muted); }
+.req-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 11.5px; padding: 4px 6px 4px 10px;
+  border-radius: 7px; background: var(--accent-bg); color: var(--accent-fg);
+}
+.req-chip[hidden] { display: none; }
+.req-chip .req-size { color: var(--muted); }
+.req-x {
+  font: inherit; line-height: 1; padding: 2px 5px; border-radius: 5px;
+  border: none; background: none; color: var(--muted); cursor: pointer;
+}
+.req-x:hover { color: var(--danger); background: var(--danger-bg); }
+.attach-error {
+  margin-top: 9px; font-size: 12.5px; line-height: 1.5;
+  color: var(--danger-fg); background: var(--danger-bg);
+  border: 1px solid var(--danger-border); border-radius: 9px; padding: 9px 11px;
+}
+.attach-error[hidden] { display: none; }
+
+/* ---- Requirements guide dialog -------------------------------- */
+dialog.wide { max-width: 680px; }
+.dlg.guide { gap: 14px; max-height: 84vh; overflow-y: auto; }
+.dlg.guide p { margin: 0; }
+.dlg.guide code { font-family: var(--font-mono); font-size: 11.5px; background: var(--raised); border-radius: 4px; padding: 1px 5px; }
+.guide-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.guide-q { display: flex; gap: 10px; align-items: flex-start; }
+.guide-q b { font-size: 13px; }
+.guide-q p { font-size: 12.5px; line-height: 1.5; color: var(--sub); margin-top: 3px; }
+.guide-q i { color: var(--accent-fg); font-style: normal; }
+.guide-n {
+  flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 11px; font-weight: 600;
+  background: var(--accent-bg); color: var(--accent-fg);
+}
+.guide-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.guide-list { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.65; color: var(--sub); }
+.guide-list.good li::marker { color: var(--accent); }
+.guide-list.bad { color: var(--muted); }
+.guide-list.bad li::marker { color: var(--danger); }
+.dlg.guide .diffbox { color: var(--code-fg); max-height: 200px; white-space: pre-wrap; }
+/* The guide is taller than a short viewport, so Close and the template buttons
+   ride along the bottom rather than sitting past the end of a scroll. */
+.dlg.guide .dlg-actions {
+  position: sticky; bottom: -18px; z-index: 1; margin: 0 -18px -18px;
+  padding: 12px 18px; background: var(--surface); border-top: 1px solid var(--border);
+}
 .input {
   font: inherit; font-size: 13.5px; padding: 8px 11px; border-radius: 8px;
   border: 1px solid var(--border-strong); background: var(--surface); color: var(--fg);
@@ -458,4 +525,6 @@ dialog::backdrop { background: rgba(2, 6, 23, 0.45); }
   .split { grid-template-columns: 1fr; }
   .rig-grid { grid-template-columns: 1fr; }
   .config { display: none; }
+  .guide-grid, .guide-split { grid-template-columns: 1fr; }
+  .job-head { flex-wrap: wrap; }
 }

@@ -99,6 +99,36 @@ def test_content_shorter_than_the_box_is_at_bottom():
     assert call(["isAtBottom"], ["STICK_THRESHOLD_PX"], "isAtBottom(0, 500, 400)") is True
 
 
+# ---- naming a job that arrived as a file ---------------------------------
+
+IDEA = ["text", "deriveIdea"]
+
+
+def test_typed_idea_always_wins():
+    assert call(IDEA, [], 'deriveIdea("guest checkout", "srd.md", "# Login\\n")') == "guest checkout"
+
+
+def test_empty_idea_falls_back_to_the_documents_heading():
+    """Attaching a spec and hitting Start with an empty box is the obvious way
+    to use this, so it has to produce a job name — the spec's own title."""
+    assert call(IDEA, [], 'deriveIdea("", "srd-v2.md", "# Sign in with a valid account\\n\\nbody")') \
+        == "Sign in with a valid account"
+
+
+def test_heading_deeper_in_the_document_is_used():
+    assert call(IDEA, [], 'deriveIdea("  ", "srd.md", "\\n\\n## Checkout flow\\nbody")') == "Checkout flow"
+
+
+def test_headingless_document_falls_back_to_the_filename():
+    assert call(IDEA, [], 'deriveIdea("", "guest_checkout-spec.md", "no headings here")') \
+        == "guest checkout spec"
+
+
+def test_nothing_at_all_stays_empty():
+    """An empty box and no file must not queue a nameless job."""
+    assert call(IDEA, [], 'deriveIdea("", "", "")') == ""
+
+
 # ---- the CSS invariant the scroll bug came from --------------------------
 
 def test_convo_entries_are_not_allowed_to_shrink():

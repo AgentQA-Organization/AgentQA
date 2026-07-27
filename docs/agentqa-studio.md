@@ -140,6 +140,8 @@ stopping the daemon **only stops the browser bridge**:
 
 1. `/agentqa-studio` → the dashboard opens, the agent attaches.
 2. Type **"Write a test for logging in with a valid account"** → **Start**.
+   Optionally **attach a requirements file** first (see below) — with one
+   attached you can leave the box empty and the job takes the document's title.
 3. Progress lines stream and the **stepper** advances
    (`map → clarify → explore → identifiers → build → verify → write → green →
    review → capture`).
@@ -151,6 +153,41 @@ stopping the daemon **only stops the browser bridge**:
 7. A **Review** card shows the additions-only diff and the generated test →
    **Approve** (or **Reject** with a note).
 8. A green **result** links the test file. The agent goes back to waiting.
+
+---
+
+## Attaching requirements
+
+The Agent panel takes a requirements document alongside the idea — click
+**Attach requirements**, or drop the file on the card. **Markdown** (`.md`,
+`.markdown`) or plain text (`.txt`) only.
+
+Word, PDF and Pages are refused, with the export step spelled out in the error.
+Studio has no document parser and adding one would mean a best-effort extraction
+that can silently drop a table — a wrong requirement is worse than a refusal. In
+Word: **File → Save As → Plain Text**, or paste into a `.md` file. Markdown is
+worth the extra step: its headings survive, so the agent can tell your success
+criteria from your blockers.
+
+The **? How to write requirements** button opens a guide covering the four
+questions the agent asks every run — when the test passes, when it fails, what
+could block it, and which entry point — plus what *not* to write (it already
+knows your screens, buttons and API calls) and a fillable template you can copy
+or download.
+
+What happens to the file:
+
+- It is stored in the gitignored mailbox (`.agentqa/studio/uploads/`), so
+  attaching one never dirties your repo. The job record carries a pointer, not
+  the text.
+- The agent reads it as an **intent artifact** — the same treatment
+  `.agentqa/config.yml`'s `docs:` block gets. It **pre-fills** the Clarify card
+  so you confirm-or-correct instead of retyping; it never replaces the card, and
+  all four questions are still asked.
+- **The live app outranks the document.** Where they disagree the app wins and
+  the agent tells you about the difference. Nothing a document claims reaches
+  the long-term memory store until the agent has seen it on a real screen.
+- Uploads no queued job still refers to are deleted at the next attach.
 
 ---
 

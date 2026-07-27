@@ -646,20 +646,96 @@ async function pollAgentState() {
   }
 }
 
+// ---- Requirements upload -------------------------------------------------
+// A requirements doc is an *intent* artifact — the same thing `docs:` points at
+// in .agentqa/config.yml — handed to one job instead of committed to the repo.
+// It travels as a pointer: the job record carries {name, path, chars} and the
+// agent opens the file, so a long spec never bloats inbox.jsonl.
+let attachedRequirements = null;
+
+// Pure: what to call a job whose idea box was left empty. A requirements file
+// is usually titled with the thing it describes, so its first heading is a
+// better job name than the filename, and the filename beats nothing at all.
+function deriveIdea(idea, filename, content) {
+  const typed = (idea || "").trim();
+  if (typed) return typed;
+  const heading = (text(content).match(/^\s*#{1,3}\s+(.+?)\s*$/m) || [])[1];
+  if (heading) return heading.trim();
+  return text(filename).replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim();
+}
+
+function attachError(msg) {
+  const box = document.getElementById("attach-error");
+  box.textContent = text(msg);
+  box.hidden = !msg;
+}
+
+function paintAttachment() {
+  const chip = document.getElementById("req-chip");
+  if (!attachedRequirements) {
+    chip.hidden = true;
+    document.getElementById("attach-hint").hidden = false;
+    return;
+  }
+  document.getElementById("req-name").textContent = attachedRequirements.name;
+  document.getElementById("req-size").textContent =
+    `${Math.max(1, Math.round(attachedRequirements.chars / 1000))} KB`;
+  chip.hidden = false;
+  document.getElementById("attach-hint").hidden = true;
+}
+
+async function attachFile(file) {
+  if (!file) return;
+  attachError("");
+  let content;
+  try {
+    content = await file.text();
+  } catch (err) {
+    return attachError(`Could not read that file: ${err.message}`);
+  }
+  try {
+    // The daemon re-checks the type and size; it owns the refusal message so
+    // the browser and a direct POST get the same answer.
+    const stored = await fetchJSON("/api/studio/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, content }),
+    });
+    attachedRequirements = stored;
+    attachedRequirements.text = content;
+    paintAttachment();
+  } catch (err) {
+    attachedRequirements = null;
+    paintAttachment();
+    attachError(err.message);
+  }
+}
+
 async function startJob() {
   const ideaEl = document.getElementById("job-idea");
-  const idea = ideaEl.value.trim();
+  const idea = deriveIdea(
+    ideaEl.value,
+    attachedRequirements ? attachedRequirements.name : "",
+    attachedRequirements ? attachedRequirements.text : "");
   if (!idea) return;
   const btn = document.getElementById("job-start");
   btn.disabled = true;
+  const req = attachedRequirements
+    ? { name: attachedRequirements.name, path: attachedRequirements.path,
+        chars: attachedRequirements.chars }
+    : null;
   try {
     await fetchJSON("/api/studio/job", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ flow_idea: idea }),
+      body: JSON.stringify({ flow_idea: idea, requirements: req }),
     });
     ideaEl.value = "";
-    logAppend(el(`<div class="prog"><span class="pdot plain"></span><span class="ptext muted">▸ queued: ${esc(idea)}</span></div>`));
+    attachedRequirements = null;
+    paintAttachment();
+    attachError("");
+    logAppend(el(`<div class="prog"><span class="pdot plain"></span><span class="ptext muted">▸ queued: ${esc(idea)}` +
+      (req ? ` <span class="pstage">${esc(req.name)}</span>` : "") + `</span></div>`));
     // The mailbox accepts a job whether or not anyone is listening. Say so, or the
     // job just sits at "queued" and reads as an agent that is quietly working.
     if (!agentIsLive(await fetchJSON("/api/studio/state"))) {
@@ -675,6 +751,55 @@ async function startJob() {
 
 document.getElementById("job-start").onclick = startJob;
 document.getElementById("job-idea").addEventListener("keydown", (e) => { if (e.key === "Enter") startJob(); });
+document.getElementById("req-file").addEventListener("change", function () {
+  attachFile(this.files[0]);
+  this.value = "";       // so re-picking the same file fires change again
+});
+document.getElementById("req-remove").onclick = () => {
+  attachedRequirements = null;
+  paintAttachment();
+  attachError("");
+};
+// Dropping the spec straight onto the card is how most people will do this.
+const jobCard = document.getElementById("job-card");
+["dragenter", "dragover"].forEach((ev) => jobCard.addEventListener(ev, (e) => {
+  e.preventDefault();
+  jobCard.classList.add("dropping");
+}));
+["dragleave", "drop"].forEach((ev) => jobCard.addEventListener(ev, (e) => {
+  e.preventDefault();
+  if (ev === "dragleave" && jobCard.contains(e.relatedTarget)) return;
+  jobCard.classList.remove("dropping");
+}));
+jobCard.addEventListener("drop", (e) => {
+  if (e.dataTransfer && e.dataTransfer.files.length) attachFile(e.dataTransfer.files[0]);
+});
+
+// ---- Requirements guide -------------------------------------------------
+// The template in index.html is the single copy: copied and downloaded from the
+// same node the dialog shows, so the three can never drift apart.
+function requirementsTemplate() {
+  return document.getElementById("req-template").textContent;
+}
+
+document.getElementById("guide-open").onclick = () => document.getElementById("guide-dialog").showModal();
+document.getElementById("guide-copy").onclick = async function () {
+  try {
+    await navigator.clipboard.writeText(requirementsTemplate());
+    this.textContent = "Copied";
+  } catch (err) {
+    this.textContent = "Copy failed — select the text";
+  }
+  setTimeout(() => { this.textContent = "Copy template"; }, 1800);
+};
+document.getElementById("guide-download").onclick = () => {
+  const blob = new Blob([requirementsTemplate()], { type: "text/markdown" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "requirements-template.md";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
 document.getElementById("jump-latest").onclick = scrollToLatest;
 // Scrolling back down yourself dismisses the pill — it only ever means "there is
 // something below you", never "click here to scroll".

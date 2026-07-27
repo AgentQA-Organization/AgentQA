@@ -40,7 +40,16 @@ def record(type_: str, **payload: Any) -> Dict[str, Any]:
     return rec
 
 
-def build_job(flow_idea: str) -> Dict[str, Any]:
+def build_job(flow_idea: str, requirements: Any = None) -> Dict[str, Any]:
+    """A job, optionally carrying the requirements document uploaded with it.
+
+    `requirements` is `{name, path, chars}` — the user's filename, a repo-relative
+    path into the mailbox, and its size. The record carries a pointer, not the
+    text: a requirements doc is thousands of characters and inbox.jsonl is read
+    whole on every poll.
+    """
+    if requirements:
+        return record("job", flow_idea=flow_idea, requirements=requirements)
     return record("job", flow_idea=flow_idea)
 
 
@@ -59,8 +68,13 @@ def validate(rec: Dict[str, Any]) -> Dict[str, Any]:
     t = rec["type"]
     if t not in INBOX_TYPES | OUTBOX_TYPES:
         raise ProtocolError("unknown type: %r" % t)
-    if t == "job" and not rec.get("flow_idea"):
-        raise ProtocolError("job missing flow_idea")
+    if t == "job":
+        if not rec.get("flow_idea"):
+            raise ProtocolError("job missing flow_idea")
+        req = rec.get("requirements")
+        if req is not None:
+            if not isinstance(req, dict) or not req.get("name") or not req.get("path"):
+                raise ProtocolError("job requirements need a name and a path")
     if t == "reply" and not rec.get("reply_to"):
         raise ProtocolError("reply missing reply_to")
     if t == "question":

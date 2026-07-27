@@ -78,9 +78,22 @@
       <span class="attach" id="agent-status"><span class="adot"></span><span id="attach-label">checking for agent…</span></span>
     </div>
     <div class="card pad" id="stepper-card" style="display:none"><div class="card-title" style="margin-bottom:11px">Progress</div><div class="stepper" id="stepper"></div></div>
-    <div class="card pad">
-      <label for="job-idea" class="card-title" style="display:block;margin-bottom:8px">Write a test for</label>
+    <div class="card pad" id="job-card">
+      <div class="job-head">
+        <label for="job-idea" class="card-title">Write a test for</label>
+        <button class="help-btn" id="guide-open" aria-label="How to write requirements" title="How to write requirements">? &nbsp;How to write requirements</button>
+      </div>
       <div class="job-form"><input class="input" id="job-idea" type="text" autocomplete="off" placeholder="e.g. the guest checkout happy path"><button class="btn btn-primary" id="job-start">Start</button></div>
+      <div class="attach-row">
+        <label class="attach-btn" for="req-file">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.05 12.25 20.2a5.5 5.5 0 0 1-7.78-7.78l9.2-9.2a3.67 3.67 0 1 1 5.18 5.19l-9.2 9.19a1.83 1.83 0 1 1-2.59-2.59l8.5-8.49"/></svg>
+          Attach requirements
+        </label>
+        <input type="file" id="req-file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
+        <span class="attach-hint" id="attach-hint">Markdown preferred — or drop a file here</span>
+        <span class="req-chip" id="req-chip" hidden><span id="req-name"></span><span class="req-size" id="req-size"></span><button class="req-x" id="req-remove" aria-label="Remove the attached file">✕</button></span>
+      </div>
+      <div class="attach-error" id="attach-error" hidden></div>
     </div>
     <div class="card"><div class="card-head"><span class="card-title">Conversation</span><span class="mono muted" id="convo-count" style="font-size:12px"></span></div>
       <div class="convo-wrap">
@@ -90,6 +103,94 @@
     </div>
   </section>
 </main>
+
+<dialog id="guide-dialog" aria-labelledby="guide-title" class="wide">
+  <form method="dialog" class="dlg guide">
+    <h3 id="guide-title">How to write requirements for a test</h3>
+    <p class="dlg-note">The agent reads your source with CodeGraph and drives the real app before it asks
+    you anything — so it already knows the screens, the buttons, the navigation and the API calls.
+    What it cannot know is <strong>what should count as passing</strong>. Write that.</p>
+
+    <div class="guide-grid">
+      <div class="guide-q"><span class="guide-n">1</span><div>
+        <b>When does this test PASS?</b>
+        <p>The observable end state, not the steps. <i>"The home tab bar is visible after signing in."</i>
+        Everything downstream — the assertion, the edge cases — comes from this one sentence.</p>
+      </div></div>
+      <div class="guide-q"><span class="guide-n">2</span><div>
+        <b>When does it FAIL?</b>
+        <p>What a real failure looks like. <i>"An inline error under the password field; stays on the login screen."</i>
+        This is what stops a failing test from later being "fixed" by loosening its assertion.</p>
+      </div></div>
+      <div class="guide-q"><span class="guide-n">3</span><div>
+        <b>What could BLOCK it?</b>
+        <p>Things that stop the run without the feature being broken: OTP/2FA, a permission prompt,
+        a paywall, required test data or backend state, a feature flag.</p>
+      </div></div>
+      <div class="guide-q"><span class="guide-n">4</span><div>
+        <b>Which ENTRY POINT?</b>
+        <p>Only when the flow is reachable from several places (welcome screen, account tab, a 401
+        bounce). Name the one the test should use.</p>
+      </div></div>
+    </div>
+
+    <div class="guide-split">
+      <div>
+        <div class="diff-label">Worth writing</div>
+        <ul class="guide-list good">
+          <li>The success criterion, in one sentence</li>
+          <li>What a real failure looks like</li>
+          <li>Blockers, test accounts, required backend state</li>
+          <li>Which environment (staging / production / mock)</li>
+          <li>Edge cases you actually care about</li>
+        </ul>
+      </div>
+      <div>
+        <div class="diff-label">Skip it — the agent finds this itself</div>
+        <ul class="guide-list bad">
+          <li>Where the buttons are, what the screens contain</li>
+          <li>Step-by-step tap instructions</li>
+          <li>Which APIs get called, what validations exist</li>
+          <li>How navigation works</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="diff-label" style="margin-top:4px">Template — save as <code>.md</code> and attach it</div>
+    <pre class="diffbox" id="req-template"># Sign in with a valid account
+
+## Success
+The home tab bar is visible after signing in.
+
+## Failure
+An inline error appears under the password field and the app stays on the login screen.
+
+## Blockers
+- OTP / 2FA: none on staging accounts
+- Permission prompts: notifications prompt on first launch — dismiss it
+- Test data: account in MYTV_USERNAME / MYTV_PASSWORD (env var names only, never the values)
+- Backend: staging must be up; a 404 dialog means the environment is down, not a test failure
+
+## Entry point
+Cold launch to the welcome screen (not the account tab).
+
+## Environment
+staging, clean install (app data reset before the run)
+
+## Edge cases worth covering
+- wrong password
+- empty password</pre>
+    <p class="dlg-note">A requirements file is treated as <b>intent, not truth</b>: the agent still confirms
+    each point with you on the Clarify card, and where the live app disagrees with the document, the live
+    app wins and it tells you about the difference.</p>
+
+    <div class="dlg-actions">
+      <button class="btn" id="guide-copy" type="button">Copy template</button>
+      <button class="btn" id="guide-download" type="button">Download .md</button>
+      <button class="btn btn-primary" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="stop-dialog" aria-labelledby="stop-title">
   <form method="dialog" class="dlg">

@@ -67,6 +67,7 @@ def main(argv=None):
             sc.read_jsonl(archived / "inbox.jsonl"), prev.get("job_cursor"))
         for job in carried:
             sc.append_line(sc.studio_dir(repo) / "inbox.jsonl", job)
+    pruned = sc.prune_uploads(repo, carried)
 
     for line in notices:
         sc.post_outbox(repo, sc.record("error", text=line))
@@ -75,9 +76,12 @@ def main(argv=None):
             "result", status="abandoned",
             summary="Job %s cancelled — a new connector attached." % cancelled_job))
     for job in carried:
+        req = job.get("requirements") or {}
         sc.post_outbox(repo, sc.record(
             "progress",
-            text="Queued job carried over: %s" % (job.get("flow_idea") or "")))
+            text="Queued job carried over: %s%s" % (
+                job.get("flow_idea") or "",
+                " (requirements: %s)" % req["name"] if req.get("name") else "")))
 
     connector = sc.new_connector_id()
     sc.reset_state(repo, connector_id=connector, attached=True, status="idle")
@@ -91,6 +95,8 @@ def main(argv=None):
     for job in carried:
         print("carried over queued job %s: %s"
               % (job.get("id"), job.get("flow_idea") or ""), file=sys.stderr)
+    if pruned:
+        print("pruned %d unreferenced requirements upload(s)" % pruned, file=sys.stderr)
     print("attached as connector %s" % connector, file=sys.stderr)
     print(connector)
     return 0

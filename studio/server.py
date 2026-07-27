@@ -10,9 +10,14 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from studio import config as cfgmod
-from studio import mailbox, memory_view, protocol, rig, runner
+from studio import mailbox, memory_view, protocol, rig, runner, uploads
 
 STATIC = Path(__file__).parent / "static"
+
+# Generous next to uploads.MAX_CHARS so an oversized document is refused by the
+# upload's own check (which can say why) rather than by a bare "body too large".
+MAX_BODY_BYTES = 4 * uploads.MAX_CHARS
+TOO_LARGE = object()   # sentinel from _body(); distinct from a parsed `null`
 
 
 def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
@@ -47,6 +52,19 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def _body(self):
+            """Parse a JSON request body, or TOO_LARGE if it exceeds the cap.
+
+            An upload is the one endpoint a browser can push real bulk at, so
+            the read is bounded rather than trusting Content-Length. The sentinel
+            is not None: a body of literal `null` parses to None and deserves a
+            different answer than one that was never read.
+            """
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length > MAX_BODY_BYTES:
+                return TOO_LARGE
+            return json.loads(self.rfile.read(length) or b"{}")
 
         def _static(self, rel):
             path = (STATIC / rel).resolve()
@@ -118,15 +136,30 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
                         repo_root, s["test_dir"], target, payload.get("env", {}),
                     )
                     return self._json({"run_id": rid})
+                if u.path == "/api/studio/upload":
+                    payload = self._body()
+                    if payload is TOO_LARGE:
+                        return self._json({"error": "body too large"}, 400)
+                    if not isinstance(payload, dict):
+                        return self._json({"error": "body must be a JSON object"}, 400)
+                    filename = payload.get("filename") or ""
+                    content = payload.get("content")
+                    refusal = uploads.check_document(filename, content)
+                    if refusal:
+                        return self._json({"error": refusal}, 400)
+                    mailbox.ensure_studio_dir(repo_root)   # for the .gitignore
+                    return self._json(uploads.store(repo_root, filename, content))
                 if u.path == "/api/studio/job":
-                    length = int(self.headers.get("Content-Length", 0) or 0)
-                    payload = json.loads(self.rfile.read(length) or b"{}")
+                    payload = self._body()
+                    if payload is TOO_LARGE:
+                        return self._json({"error": "body too large"}, 400)
                     if not isinstance(payload, dict) or not payload.get("flow_idea"):
                         return self._json({"error": "flow_idea required"}, 400)
                     st = mailbox.read_state(repo_root)
                     if st.get("status") in ("running", "waiting"):
                         return self._json({"error": "a job is already running"}, 409)
-                    rec = mailbox.append_inbox(repo_root, protocol.build_job(payload["flow_idea"]))
+                    rec = mailbox.append_inbox(repo_root, protocol.build_job(
+                        payload["flow_idea"], payload.get("requirements")))
                     return self._json({"ok": True, "id": rec["id"]})
                 if u.path == "/api/studio/reply":
                     length = int(self.headers.get("Content-Length", 0) or 0)
