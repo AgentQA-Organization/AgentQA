@@ -63,3 +63,34 @@ def test_tail_outbox_yields_records_then_keepalive(tmp_path):
     assert next(it) == {"a": 1}
     assert next(it) == {"b": 2}
     assert next(it) is None          # nothing new → keepalive tick
+
+
+def test_tail_outbox_restarts_when_the_file_is_rotated(tmp_path):
+    """A new connector archives the outbox mid-stream. The tail follows the file
+    by line offset, so without this it would sit silent until the fresh file
+    grew past the old one's length — the new session's first records, the ones
+    explaining what just happened, would never reach the browser."""
+    d = mailbox.studio_dir(tmp_path)
+    d.mkdir(parents=True)
+    out = d / "outbox.jsonl"
+    out.write_text('{"a": 1}\n{"b": 2}\n{"c": 3}\n')
+    it = mailbox.tail_outbox(tmp_path, poll=0.01)
+    for _ in range(3):
+        next(it)
+    assert next(it) is None
+
+    out.write_text('{"fresh": 1}\n')     # shorter: the archive + a new session
+    assert next(it) is mailbox.OUTBOX_RESET
+    assert next(it) == {"fresh": 1}
+
+
+def test_tail_outbox_survives_the_outbox_being_deleted(tmp_path):
+    d = mailbox.studio_dir(tmp_path)
+    d.mkdir(parents=True)
+    out = d / "outbox.jsonl"
+    out.write_text('{"a": 1}\n')
+    it = mailbox.tail_outbox(tmp_path, poll=0.01)
+    assert next(it) == {"a": 1}
+    out.unlink()
+    assert next(it) is mailbox.OUTBOX_RESET
+    assert next(it) is None

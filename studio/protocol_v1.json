@@ -8,12 +8,16 @@
   },
   "outbox": {
     "progress": {"v": 1, "id": "p1", "ts": "2026-07-25T10:00:05Z", "type": "progress", "text": "Indexing with CodeGraph…", "stage": "map"},
-    "question_clarify": {"v": 1, "id": "q1", "ts": "2026-07-25T10:00:30Z", "type": "question", "kind": "form", "subtype": "clarify", "prompt": "Confirm what this flow should prove", "questions": [{"qid": "success", "label": "What does success look like?", "kind": "text", "default": "lands on the home tab"}, {"qid": "failure", "label": "What does failure look like?", "kind": "text"}, {"qid": "blockers", "label": "Anything that could block the test?", "kind": "text"}, {"qid": "entry", "label": "Which entry point?", "kind": "choice", "options": ["welcome screen", "account tab"]}]},
+    "question_clarify": {"v": 1, "id": "q1", "ts": "2026-07-25T10:00:30Z", "type": "question", "kind": "form", "subtype": "clarify", "prompt": "Confirm what this flow should prove", "questions": [{"qid": "success", "label": "What does success look like?", "kind": "text", "default": "lands on the home tab"}, {"qid": "failure", "label": "What does failure look like?", "kind": "text"}, {"qid": "blockers", "label": "Anything that could block the test?", "kind": "text"}, {"qid": "entry", "label": "Which entry point?", "kind": "choice", "options": [{"label": "Cold launch → welcome screen", "value": "welcome"}, {"label": "Already signed in → account tab", "value": "account_tab"}]}]},
     "question_ask": {"v": 1, "id": "qa", "ts": "2026-07-25T10:02:00Z", "type": "question", "kind": "form", "subtype": "ask", "prompt": "A location permission prompt appeared.", "questions": [{"qid": "action", "label": "What should the test do?", "kind": "choice", "options": ["Allow", "Deny", "Dismiss"]}]},
     "question_build": {"v": 1, "id": "q2", "ts": "2026-07-25T10:04:00Z", "type": "question", "kind": "confirm", "subtype": "build", "prompt": "Build & install the app onto the booted simulator, then confirm."},
     "question_review": {"v": 1, "id": "q3", "ts": "2026-07-25T10:08:00Z", "type": "question", "kind": "review", "subtype": "review", "prompt": "Review the additions and the test.", "diff": "+ accessibilityIdentifier(\"login_submit_button\")", "test_files": [{"path": "AutomationTests/tests/test_login.py", "content": "def test_login():\n    ...\n"}]},
     "result": {"v": 1, "id": "res1", "ts": "2026-07-25T10:10:00Z", "type": "result", "status": "green", "summary": "login test passing", "test_path": "AutomationTests/tests/test_login.py"},
     "error": {"v": 1, "id": "e1", "ts": "2026-07-25T10:10:00Z", "type": "error", "text": "could not reach the simulator"}
   },
-  "state": {"v": 1, "attached": true, "heartbeat_ts": "2026-07-25T10:08:30Z", "status": "waiting", "current_job_id": "j1", "awaiting": "q3", "job_cursor": "j1"}
+  "state": {"v": 1, "connector_id": "c1", "attached": true, "heartbeat_ts": "2026-07-25T10:08:30Z", "status": "waiting", "current_job_id": "j1", "awaiting": "q3", "job_cursor": "j1"},
+  "notes": {
+    "choice_options": "A choice field's options are either bare strings (label == value, see question_ask) or {label, value} pairs (see question_clarify's entry field). The browser shows the label and replies with the value.",
+    "connector_id": "Identifies the one attached connector. Each studio-attach.py mints a new one, which supersedes any worker still holding an older id."
+  }
 }

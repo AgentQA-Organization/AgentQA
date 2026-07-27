@@ -174,6 +174,10 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
                 for rec in mailbox.tail_outbox(repo_root):
                     if rec is None:
                         self.wfile.write(b": ping\n\n")
+                    elif rec is mailbox.OUTBOX_RESET:
+                        # A named event, not a protocol record: the mailbox was
+                        # rotated, so the browser must clear what it has painted.
+                        self.wfile.write(b'event: session\ndata: {"reset": true}\n\n')
                     else:
                         self.wfile.write(("data: %s\n\n" % json.dumps(rec)).encode())
                     self.wfile.flush()

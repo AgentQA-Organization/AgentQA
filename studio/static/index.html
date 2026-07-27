@@ -82,7 +82,12 @@
       <label for="job-idea" class="card-title" style="display:block;margin-bottom:8px">Write a test for</label>
       <div class="job-form"><input class="input" id="job-idea" type="text" autocomplete="off" placeholder="e.g. the guest checkout happy path"><button class="btn btn-primary" id="job-start">Start</button></div>
     </div>
-    <div class="card"><div class="card-head"><span class="card-title">Conversation</span><span class="mono muted" id="convo-count" style="font-size:12px"></span></div><div class="convo agent-log" id="agent-log"></div></div>
+    <div class="card"><div class="card-head"><span class="card-title">Conversation</span><span class="mono muted" id="convo-count" style="font-size:12px"></span></div>
+      <div class="convo-wrap">
+        <div class="convo agent-log" id="agent-log"></div>
+        <button class="jump-latest" id="jump-latest" hidden>↓ New messages</button>
+      </div>
+    </div>
   </section>
 </main>
 

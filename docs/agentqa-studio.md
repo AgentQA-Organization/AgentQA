@@ -183,6 +183,14 @@ wall of terminal output.
 
 ## Notes
 
+- **Re-running `/agentqa-studio` takes over.** Only one connector can own the
+  mailbox at a time, so each attach cancels the previous session, archives its
+  transcript under `.agentqa/studio/archive/<timestamp>/`, and starts the
+  Conversation panel clean — with a line saying what it cancelled. Anything the
+  old session was running is dropped; an idea you queued but that never started
+  carries over and runs. Use this deliberately when Studio is wedged (a card
+  nobody is answering, or "a job is already running" on an agent that walked
+  away): re-run `/agentqa-studio` and it resets.
 - **The mailbox is never committed** — `.agentqa/studio/` is gitignored by the
   connector, and both the daemon and the agent enforce it.
 - **The connector never modifies `agentqa-write-test`.** It is a thin transport

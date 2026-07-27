@@ -37,10 +37,10 @@ stays thin and can't drift from the protocol the daemon reads:
 
 | script | what it does |
 |---|---|
-| `scripts/studio-attach.py <repo>` | ensure the mailbox + its `.gitignore`, mark attached/idle |
-| `scripts/studio-wait.py <repo> (--job \| --reply-to <qid>)` | block-poll the inbox; prints one JSON line |
-| `scripts/studio-post.py <repo> <progress\|question\|result\|error> …` | append an outbox record; prints its id |
-| `scripts/studio-detach.py <repo>` | mark detached/idle when the session ends |
+| `scripts/studio-attach.py <repo>` | take the mailbox over: archive the old session, mark attached/idle, **print this session's connector id** |
+| `scripts/studio-wait.py <repo> (--job \| --reply-to <qid>) [--connector <id>]` | block-poll the inbox; prints one JSON line |
+| `scripts/studio-post.py <repo> <progress\|question\|result\|error> … [--connector <id>]` | append an outbox record; prints its id |
+| `scripts/studio-detach.py <repo> [--connector <id>]` | mark detached/idle when the session ends |
 
 `<repo>` is the app repo root — the git top level of your current directory. Set
 it once: `REPO="$(git rev-parse --show-toplevel)"`.
@@ -50,6 +50,34 @@ job/reply lands, or `{"status":"waiting"}` when it times out under the tool cap.
 **`waiting` is not an error — run the same wait again to re-block.** That is how a
 single turn can sit at a checkpoint for as long as the human needs while keeping
 the heartbeat warm.
+
+## One connector at a time
+
+The mailbox is a set of shared files with no locking, so two live connectors is
+not a supported state — they race for the same job and answer each other's
+cards. Attaching is therefore a **takeover**, not an addition: `studio-attach.py`
+mints a fresh **connector id** and archives the previous session's mailbox under
+`.agentqa/studio/archive/<ts>/`.
+
+Capture that id and pass it as `--connector` on **every** later call:
+
+```bash
+CONNECTOR="$(python3 scripts/studio-attach.py "$REPO")"
+```
+
+If another `/agentqa-studio` attaches while you are working, your id stops being
+the live one and the scripts tell you so:
+
+- `studio-wait.py` prints `{"status":"superseded","connector_id":"…"}`
+- `studio-post.py` exits **3** and writes `superseded: …` to stderr
+
+<critical>
+**On `superseded`, stop.** Do not re-run the wait, do not post anything, do not
+finish the job. Another agent now owns this dashboard and everything you write
+would land in *their* transcript. Say one line to the user — that a newer
+`/agentqa-studio` session took over and this one is standing down — and end
+your turn.
+</critical>
 
 ## Prerequisites
 
@@ -73,8 +101,17 @@ REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 if ! nc -z 127.0.0.1 7332 2>/dev/null; then
   agentqa-studio >/tmp/agentqa-studio.log 2>&1 &   # M1 launcher; self-resolves the repo + opens a browser
 fi
-python3 scripts/studio-attach.py "$REPO"
+CONNECTOR="$(python3 scripts/studio-attach.py "$REPO")"
+echo "connector: $CONNECTOR"
 ```
+
+Attach leaves Studio clean on purpose: any earlier session is cancelled, its
+mailbox archived, its state.json replaced. Two things it does **not** throw
+away — a job that was queued but never started (it carries forward into the new
+inbox and your step-2 wait returns it immediately), and the archived transcript
+itself (kept under `.agentqa/studio/archive/` if you need to look). Attach's
+stderr names whatever it cancelled or carried over; if it cancelled a job, tell
+the user in one line so a disappearing run is never a mystery.
 
 <critical>
 **Do not end your turn after attaching.** Attaching only writes `state.json` — it
@@ -93,7 +130,7 @@ chat), skip this step — the browser box and the chat are two ways to start the
 same job. Otherwise block on the mailbox:
 
 ```bash
-python3 scripts/studio-wait.py "$REPO" --job
+python3 scripts/studio-wait.py "$REPO" --job --connector "$CONNECTOR"
 ```
 
 On `{"status":"answered",…}` take `record.flow_idea` as the test idea and go to
@@ -101,6 +138,7 @@ step 3. On `{"status":"waiting"}` the 8-minute poll simply timed out — **run t
 exact same command again**, in the same turn, as many times as it takes. That
 re-blocking loop is what keeps an agent alive at the dashboard while the user
 thinks; ending the turn instead is the one failure this skill must never produce.
+On `{"status":"superseded",…}` stand down as described above.
 
 ### 3. Delegate to agentqa-write-test
 
@@ -116,8 +154,9 @@ the printed question id (`QID`), then wait on it:
 
 ```bash
 QID="$(python3 scripts/studio-post.py "$REPO" question --kind confirm --subtype build \
-       --prompt 'Build & install the app onto the booted simulator, then confirm.')"
-python3 scripts/studio-wait.py "$REPO" --reply-to "$QID"   # re-run while it says waiting
+       --prompt 'Build & install the app onto the booted simulator, then confirm.' \
+       --connector "$CONNECTOR")"
+python3 scripts/studio-wait.py "$REPO" --reply-to "$QID" --connector "$CONNECTOR"  # re-run while it says waiting
 ```
 
 The four touchpoints and how they map:
@@ -137,6 +176,12 @@ Notes that keep the cards faithful to the flow:
   entry point. When step-0 docs already answer a question, pass that answer as the
   field's `default` — same "confirm-or-correct, don't ask cold" behavior as the
   terminal flow.
+- **`options` on a `choice` field** is a list of either bare strings, or
+  `{"label": …, "value": …}` pairs when the button text and the answer you want
+  back differ. The browser shows `label` and replies with `value`; a bare string
+  is both. Nothing else is a valid option — an object without `label`/`value`
+  renders as raw JSON on the button, which is the tell that a question was built
+  wrong.
 - **Build card** only exists under `build.policy: human`. Under `agent`, write-test
   builds itself — post no build question.
 - **Review** carries the additions-only diff and the test file(s); after approval,
@@ -150,7 +195,8 @@ move. Tag each with the phase it belongs to (optional but nice; the stepper read
 the slug):
 
 ```bash
-python3 scripts/studio-post.py "$REPO" progress --text 'Exploring the login flow with agent-device' --stage explore
+python3 scripts/studio-post.py "$REPO" progress --text 'Exploring the login flow with agent-device' \
+  --stage explore --connector "$CONNECTOR"
 ```
 
 Stage slugs: `map · clarify · explore · identifiers · build · verify · write ·
@@ -160,7 +206,8 @@ When the run finishes green:
 
 ```bash
 python3 scripts/studio-post.py "$REPO" result --status green \
-  --summary 'login test passing' --test-path 'AutomationTests/tests/test_login.py'
+  --summary 'login test passing' --test-path 'AutomationTests/tests/test_login.py' \
+  --connector "$CONNECTOR"
 ```
 
 If the run is abandoned, post `result --status abandoned --summary …` (and an
@@ -174,13 +221,18 @@ turn. When the user ends the session, detach so the dashboard shows the agent is
 gone rather than leaving a stale `attached: true` behind:
 
 ```bash
-python3 scripts/studio-detach.py "$REPO"
+python3 scripts/studio-detach.py "$REPO" --connector "$CONNECTOR"
 ```
 
 **Picking up an orphaned job.** A job posted while no agent was watching is not
-lost — it stays in `inbox.jsonl`, and `job_cursor` still points before it, so the
-next attach's step-2 wait returns it immediately. If the user says the dashboard
+lost. It is still queued — never claimed — so attach carries it into the fresh
+inbox and your step-2 wait returns it immediately. If the user says the dashboard
 has been sitting at *queued*, this is the fix: attach and wait, and the job runs.
+
+**A job that vanished.** If the dashboard was showing a job in flight and the
+transcript is suddenly a short "previous session was cancelled" note, somebody
+re-ran `/agentqa-studio` — that attach cancelled the run. The old transcript is
+under `.agentqa/studio/archive/`; the flow itself has to be started again.
 
 ## Background
 

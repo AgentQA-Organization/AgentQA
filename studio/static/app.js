@@ -3,15 +3,47 @@ async function fetchJSON(path, opts) {
   const r = await fetch(path, opts);
   const body = await r.json().catch(() => ({}));
   if (!r.ok) {
-    throw new Error(body && body.error ? body.error : `HTTP ${r.status}`);
+    throw new Error(body && body.error ? text(body.error) : `HTTP ${r.status}`);
   }
   return body;
 }
 
+// Every string the UI paints goes through here first. The mailbox is written by
+// an agent, not by this code, so any field can arrive as an object — and
+// `String(obj)` renders the useless "[object Object]". Objects become compact
+// JSON instead: still wrong-looking, but it names the field that misbehaved.
+function text(v) {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "object") {
+    try { return JSON.stringify(v); } catch (_) { return ""; }
+  }
+  return String(v);
+}
+
 function esc(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({
+  return text(s).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
+}
+
+// A choice option is either a bare string or a {label, value} pair (Studio
+// Protocol v1 allows both). The button shows the label; the reply carries the
+// value — conflating them is what shipped "[object Object]" back to the agent.
+function optionLabel(opt) {
+  if (opt && typeof opt === "object" && !Array.isArray(opt)) {
+    if (opt.label !== undefined && opt.label !== null) return text(opt.label);
+    if (opt.value !== undefined && opt.value !== null) return text(opt.value);
+  }
+  return text(opt);
+}
+
+function optionValue(opt) {
+  if (opt && typeof opt === "object" && !Array.isArray(opt)) {
+    if (opt.value !== undefined && opt.value !== null) return text(opt.value);
+    if (opt.label !== undefined && opt.label !== null) return text(opt.label);
+  }
+  return text(opt);
 }
 
 function el(html) {
@@ -76,8 +108,8 @@ async function loadConfig() {
   const box = document.getElementById("config");
   try {
     const c = await fetchJSON("/api/config");
-    box.textContent =
-      `${c.platform} · ${c.app_id} · build:${c.build_policy} · appium:${c.appium_port}`;
+    box.textContent = `${text(c.platform)} · ${text(c.app_id)} · ` +
+      `build:${text(c.build_policy)} · appium:${text(c.appium_port)}`;
   } catch (err) {
     box.textContent = `config error: ${err.message}`;
   }
@@ -177,7 +209,7 @@ async function runTests(target) {
   out.innerHTML = "";
   const badge = document.getElementById("exit-badge"); badge.textContent = ""; badge.className = "exit-badge";
   document.querySelectorAll(".file-row").forEach((r) => r.classList.toggle("running", r.dataset.f === target));
-  termLine(`$ pytest ${target}`, "dim");
+  termLine(`$ pytest ${text(target)}`, "dim");
   setRunButtonsDisabled(true);
   setTabDot("tests", "busy");
   let run_id;
@@ -263,7 +295,7 @@ function renderNote(path, content) {
     `<div class="card-head nv-head"><span class="mono" style="font-size:12px;color:var(--muted)">${esc(name)}</span>` +
     `<span class="nv-tag">${esc(group)}</span></div><div class="nv-body" id="nv-body"></div>`;
   const body = document.getElementById("nv-body");
-  for (const line of String(content).split("\n")) {
+  for (const line of text(content).split("\n")) {
     if (line.indexOf("# ") === 0) { body.appendChild(el(`<h3>${esc(line.slice(2))}</h3>`)); continue; }
     if (line === "") { body.appendChild(el(`<div style="height:6px"></div>`)); continue; }
     const m = /^(Identifiers|Key assertion|Verified):(.*)$/.exec(line);
@@ -280,7 +312,7 @@ async function loadStale() {
   try {
     const r = await fetchJSON("/api/memory/stale");
     if (r.stale == null) return memBanner("warn", "stale check unavailable (memory scripts not found)");
-    memBanner("warn", r.stale ? `Stale: ${r.stale}` : "Nothing stale");
+    memBanner("warn", r.stale ? `Stale: ${text(r.stale)}` : "Nothing stale");
   } catch (err) {
     memBanner("bad", `stale error: ${err.message}`);
   }
@@ -290,7 +322,7 @@ async function loadLint() {
   try {
     const r = await fetchJSON("/api/memory/lint");
     if (r.lint == null) return memBanner("warn", "lint unavailable (memory scripts not found)");
-    memBanner(r.lint.ok ? "ok" : "bad", `${r.lint.ok ? "PASS" : "FAIL"} — ${r.lint.output || "(no output)"}`);
+    memBanner(r.lint.ok ? "ok" : "bad", `${r.lint.ok ? "PASS" : "FAIL"} — ${text(r.lint.output) || "(no output)"}`);
   } catch (err) {
     memBanner("bad", `lint error: ${err.message}`);
   }
@@ -334,11 +366,37 @@ function renderStepper(current) {
   });
 }
 
+const STICK_THRESHOLD_PX = 48;
+
+// Pure: is the reader parked at the newest entry? Only then may new content pull
+// the box down — someone scrolled up is reading history and yanking them to the
+// bottom loses their place. The threshold absorbs sub-pixel scroll positions and
+// keeps "following" from breaking on a stray wheel tick.
+function isAtBottom(scrollTop, clientHeight, scrollHeight) {
+  return scrollHeight - scrollTop - clientHeight <= STICK_THRESHOLD_PX;
+}
+
+function scrollToLatest() {
+  const log = document.getElementById("agent-log");
+  log.scrollTop = log.scrollHeight;
+  document.getElementById("jump-latest").hidden = true;
+}
+
 function logAppend(node) {
   const log = document.getElementById("agent-log");
+  // Measured before the append, or the new node's own height already counts as
+  // "scrolled away from the bottom" and stick would never hold.
+  const stick = isAtBottom(log.scrollTop, log.clientHeight, log.scrollHeight);
   log.appendChild(node);
-  while (log.children.length > 500) log.removeChild(log.firstElementChild);
-  log.scrollTop = log.scrollHeight;
+  // Trimming from the top shifts everything up under a reader who is scrolled
+  // into history; hold their position by the height the removal took away.
+  while (log.children.length > 500) {
+    const gone = log.firstElementChild.getBoundingClientRect().height;
+    log.removeChild(log.firstElementChild);
+    if (!stick) log.scrollTop = Math.max(0, log.scrollTop - gone);
+  }
+  if (stick) scrollToLatest();
+  else document.getElementById("jump-latest").hidden = false;
 }
 
 function convoCount() {
@@ -408,8 +466,8 @@ function renderForm(rec, body) {
     if (q.kind === "choice") {
       const choices = el(`<div class="segmented"></div>`);
       (q.options || []).forEach((opt) => {
-        const seg = el(`<button type="button" class="seg" aria-pressed="false">${esc(opt)}</button>`);
-        seg.dataset.value = opt;
+        const seg = el(`<button type="button" class="seg" aria-pressed="false">${esc(optionLabel(opt))}</button>`);
+        seg.dataset.value = optionValue(opt);
         seg.onclick = () => {
           choices.querySelectorAll(".seg").forEach((s) => s.setAttribute("aria-pressed", "false"));
           seg.setAttribute("aria-pressed", "true");
@@ -514,6 +572,23 @@ function dispatch(rec) {
 
 let agentStream = null;
 
+// A new connector archives the mailbox on attach, and the daemon says so on the
+// stream. Everything on screen belongs to the archived session — including cards
+// whose agent is gone, which would silently do nothing if clicked — so drop the
+// lot. This arrives ahead of the new session's records on the same stream, so
+// there is no window where a reset wipes messages that already belong to it.
+function resetConversation() {
+  const log = document.getElementById("agent-log");
+  log.innerHTML = "";
+  seenRecordIds.clear();
+  renderStepper(null);
+  document.getElementById("jump-latest").hidden = true;
+  setTabDot("agent", null);
+  logAppend(el(`<div class="prog"><span class="pdot plain"></span>` +
+    `<span class="ptext muted">▸ new agent session attached — earlier messages archived</span></div>`));
+  convoCount();
+}
+
 function connectStream() {
   const es = new EventSource("/api/studio/stream");
   agentStream = es;
@@ -522,6 +597,7 @@ function connectStream() {
     try { rec = JSON.parse(e.data); } catch (_) { return; }
     dispatch(rec);
   };
+  es.addEventListener("session", resetConversation);
   es.onerror = () => { /* browser auto-reconnects; the outbox replays on reconnect */ };
 }
 
@@ -599,6 +675,14 @@ async function startJob() {
 
 document.getElementById("job-start").onclick = startJob;
 document.getElementById("job-idea").addEventListener("keydown", (e) => { if (e.key === "Enter") startJob(); });
+document.getElementById("jump-latest").onclick = scrollToLatest;
+// Scrolling back down yourself dismisses the pill — it only ever means "there is
+// something below you", never "click here to scroll".
+document.getElementById("agent-log").addEventListener("scroll", function () {
+  if (isAtBottom(this.scrollTop, this.clientHeight, this.scrollHeight)) {
+    document.getElementById("jump-latest").hidden = true;
+  }
+});
 pollAgentState();
 let agentPoll = setInterval(pollAgentState, 4000);
 connectStream();

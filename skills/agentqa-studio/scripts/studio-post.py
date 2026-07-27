@@ -10,6 +10,11 @@
 
 Prints the record id. A `question` flips state to waiting/awaiting:<id>; a
 `result` flips state back to idle; anything else just bumps the heartbeat.
+
+Pass `--connector <id>` (from studio-attach.py) on any subcommand and the post
+is refused with exit 3 once another connector has taken the mailbox over —
+better a loud failure in the displaced session than a card appearing in a live
+transcript from an agent nobody is talking to.
 """
 import argparse
 import json
@@ -25,11 +30,18 @@ def main(argv=None):
     ap.add_argument("repo")
     sub = ap.add_subparsers(dest="type", required=True)
 
-    p = sub.add_parser("progress")
+    # Shared by every subcommand so it can be passed in the natural trailing
+    # position, after the subcommand's own flags.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--connector", default=None,
+                        help="this session's connector id; refuses the post if "
+                             "another connector has taken over")
+
+    p = sub.add_parser("progress", parents=[common])
     p.add_argument("--text", required=True)
     p.add_argument("--stage", default=None)
 
-    q = sub.add_parser("question")
+    q = sub.add_parser("question", parents=[common])
     q.add_argument("--kind", required=True, choices=["form", "confirm", "review"])
     q.add_argument("--subtype", required=True,
                    choices=["clarify", "ask", "build", "review"])
@@ -38,16 +50,24 @@ def main(argv=None):
     q.add_argument("--diff", default=None)
     q.add_argument("--test-files", default=None, help="JSON array of {path,content}")
 
-    r = sub.add_parser("result")
+    r = sub.add_parser("result", parents=[common])
     r.add_argument("--status", required=True, choices=["green", "abandoned"])
     r.add_argument("--summary", default="")
     r.add_argument("--test-path", default=None)
 
-    e = sub.add_parser("error")
+    e = sub.add_parser("error", parents=[common])
     e.add_argument("--text", required=True)
 
     args = ap.parse_args(argv)
     repo = Path(args.repo)
+
+    try:
+        sc.check_connector(repo, args.connector)
+    except sc.Superseded as taken_over:
+        print("superseded: connector %s is attached now, not %s — this session "
+              "has been replaced; stop posting and end the loop."
+              % (taken_over, args.connector), file=sys.stderr)
+        return 3
 
     if args.type == "progress":
         payload = {"text": args.text}
@@ -73,11 +93,13 @@ def main(argv=None):
 
     sc.post_outbox(repo, rec)
     if args.type == "question":
-        sc.write_state(repo, status="waiting", awaiting=rec["id"])
+        sc.write_state(repo, connector=args.connector,
+                       status="waiting", awaiting=rec["id"])
     elif args.type == "result":
-        sc.write_state(repo, status="idle", awaiting=None)
+        sc.write_state(repo, connector=args.connector,
+                       status="idle", awaiting=None, current_job_id=None)
     else:
-        sc.write_state(repo)  # heartbeat bump
+        sc.write_state(repo, connector=args.connector)  # heartbeat bump
     print(rec["id"])
     return 0
 

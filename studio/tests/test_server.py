@@ -183,6 +183,31 @@ def test_studio_reply_appends(live_server, tmp_path):
     assert '"type": "reply"' in inbox and '"reply_to": "q1"' in inbox
 
 
+def test_studio_stream_announces_a_rotated_mailbox(live_server, tmp_path):
+    """When a new connector archives the outbox, the browser has to be told to
+    clear — on the stream itself, so the marker arrives *before* the new
+    session's records instead of racing a poll that could wipe them."""
+    d = _studio_dir(tmp_path)
+    d.mkdir(parents=True, exist_ok=True)
+    out = d / "outbox.jsonl"
+    out.write_text('{"type":"progress","text":"old one"}\n'
+                   '{"type":"progress","text":"old two"}\n')
+    with urllib.request.urlopen(live_server + "/api/studio/stream", timeout=5) as r:
+        for _ in range(20):                       # drain the archived session
+            if "old two" in r.readline().decode():
+                break
+        out.write_text('{"type":"progress","text":"brand new"}\n')
+        saw_session = False
+        for _ in range(40):
+            line = r.readline().decode()
+            if line.startswith("event: session"):
+                saw_session = True
+            if "brand new" in line:
+                assert saw_session, "new records arrived before the session marker"
+                return
+    assert False, "the rotated outbox never reached the stream"
+
+
 def test_studio_stream_replays_outbox(live_server, tmp_path):
     d = _studio_dir(tmp_path)
     d.mkdir(parents=True, exist_ok=True)

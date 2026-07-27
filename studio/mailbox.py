@@ -14,6 +14,24 @@ from typing import Any, Dict, Iterator, List, Optional
 from studio import protocol
 
 
+class _OutboxReset:
+    """Sentinel: the outbox was replaced, so everything streamed so far is gone.
+
+    A new connector archives the mailbox on attach. `tail_outbox` follows the
+    file by line offset, and those offsets mean nothing once the file underneath
+    is a different, shorter one — so the tail restarts and emits this first. It
+    reaches the browser ahead of the new session's records on the same stream,
+    which is what makes "clear the transcript" land in the right order; a
+    separate poll could clear it *after* the new records had already arrived.
+    """
+
+    def __repr__(self) -> str:
+        return "OUTBOX_RESET"
+
+
+OUTBOX_RESET = _OutboxReset()
+
+
 def studio_dir(repo_root: Path) -> Path:
     return Path(repo_root) / ".agentqa" / "studio"
 
@@ -69,9 +87,9 @@ def read_outbox(repo_root: Path) -> List[Dict[str, Any]]:
 
 def _default_state() -> Dict[str, Any]:
     """Return the default idle/detached state dict."""
-    return {"v": protocol.PROTOCOL_VERSION, "attached": False, "status": "idle",
-            "current_job_id": None, "awaiting": None, "heartbeat_ts": None,
-            "job_cursor": None}
+    return {"v": protocol.PROTOCOL_VERSION, "connector_id": None, "attached": False,
+            "status": "idle", "current_job_id": None, "awaiting": None,
+            "heartbeat_ts": None, "job_cursor": None}
 
 
 def read_state(repo_root: Path) -> Dict[str, Any]:
@@ -84,18 +102,27 @@ def read_state(repo_root: Path) -> Dict[str, Any]:
         return _default_state()
 
 
-def tail_outbox(repo_root: Path, poll: float = 0.5) -> Iterator[Optional[Dict[str, Any]]]:
+def tail_outbox(repo_root: Path, poll: float = 0.5) -> Iterator[Any]:
     """Yield outbox records oldest-first then follow appends; None on idle ticks.
 
     The SSE handler turns a record into a `data:` event and None into a `: ping`
     comment — the comment doubles as a disconnect probe so a closed browser stops
     the stream. The caller stops iterating on client disconnect.
+
+    A shrinking file means the outbox was rotated out from under us (a new
+    connector attached): the tail restarts from the top and yields OUTBOX_RESET
+    first, so the browser drops the archived session's records before the new
+    ones arrive rather than interleaving two transcripts.
     """
     path = studio_dir(repo_root) / "outbox.jsonl"
     seen = 0
     while True:
         text = path.read_text(encoding="utf-8") if path.is_file() else ""
         complete = text.count("\n")
+        if complete < seen:
+            seen = 0
+            yield OUTBOX_RESET
+            continue
         if complete > seen:
             rows = text.split("\n")
             for raw in rows[seen:complete]:
