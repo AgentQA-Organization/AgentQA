@@ -2,6 +2,7 @@
 import argparse
 import json
 import mimetypes
+import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,9 +19,22 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
                 port: int = 7332) -> ThreadingHTTPServer:
     repo_root = Path(repo_root)
     run_mgr = runner.RunManager()
+    holder = {}          # filled with the server below, so a handler can stop it
 
     def summary():
         return cfgmod.config_summary(cfgmod.load_config(repo_root))
+
+    def stop():
+        """Tear the daemon down from off the request thread.
+
+        shutdown() blocks until the serve_forever loop exits, so this can only
+        run after the response has been written. server_close() then releases
+        the listening socket — without it the port stays claimed and the next
+        request sits in the backlog instead of failing fast.
+        """
+        srv = holder["srv"]
+        srv.shutdown()
+        srv.server_close()
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):  # quiet
@@ -122,6 +136,12 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
                     reply_to = payload.pop("reply_to")
                     rec = mailbox.append_inbox(repo_root, protocol.build_reply(reply_to, **payload))
                     return self._json({"ok": True, "id": rec["id"]})
+                if u.path == "/api/shutdown":
+                    # Answer first: a browser that never sees the 200 cannot tell
+                    # "stopped" apart from "this build has no such endpoint".
+                    self._json({"ok": True})
+                    threading.Thread(target=stop, daemon=True).start()
+                    return
                 return self._json({"error": "not found"}, 404)
             except FileNotFoundError as e:
                 return self._json({"error": "config missing: %s" % e}, 500)
@@ -160,7 +180,9 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
             except Exception:
                 return
 
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    holder["srv"] = srv
+    return srv
 
 
 def main(argv=None):
@@ -173,13 +195,16 @@ def main(argv=None):
     scripts = Path(args.memory_scripts) if args.memory_scripts else None
     srv = make_server(Path(args.repo).resolve(), scripts, args.port)
     url = "http://127.0.0.1:%d/" % srv.server_address[1]
-    print("AgentQA Studio on %s  (Ctrl-C to stop)" % url)
+    print("AgentQA Studio on %s  (stop from the dashboard, or Ctrl-C)" % url)
     if args.open:
         webbrowser.open(url)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         srv.shutdown()
+    # Idempotent: the dashboard's stop button already closed the socket.
+    srv.server_close()
+    print("Studio stopped.")
 
 
 if __name__ == "__main__":

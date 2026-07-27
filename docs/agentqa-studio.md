@@ -115,7 +115,21 @@ agentqa-studio
 This starts just the daemon and opens the dashboard as a **read-only viewer** — the
 rig status, the test runner, and the memory browser. The Agent panel shows "No
 agent connected." Useful for watching the rig or running the suite without writing
-a new test. `Ctrl-C` stops it.
+a new test.
+
+### Stopping it
+
+Click the **power button** in the dashboard's top-right corner, or press `Ctrl-C`
+in the terminal that launched it. Both stop the same thing — the daemon.
+
+If a job or a test run is in flight, the confirm dialog names it first, because
+stopping the daemon **only stops the browser bridge**:
+
+- **An attached agent keeps running.** The connector reads and writes the mailbox
+  files under `.agentqa/studio/` directly, never over HTTP. Stop it in Claude Code.
+  Anything it asks you while the dashboard is down has nowhere to be answered.
+- **An in-flight `pytest` run keeps running.** It is a child process; stopping the
+  daemon just stops watching its output.
 
 > The command is installed on your `PATH` by `/agentqa-init setup` (a symlink in
 > `~/.local/bin`). Set `AGENTQA_STUDIO_PORT` to use a port other than `7332`.

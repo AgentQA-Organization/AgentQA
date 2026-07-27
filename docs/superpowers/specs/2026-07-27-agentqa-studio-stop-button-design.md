@@ -54,10 +54,15 @@ thread:
 
 ```python
 holder = {}            # filled in below, after the server is constructed
+
+def stop():
+    srv = holder["srv"]
+    srv.shutdown()         # ends the serve_forever loop
+    srv.server_close()     # releases the listening socket
 ...
 if u.path == "/api/shutdown":
     self._json({"ok": True})
-    threading.Thread(target=holder["srv"].shutdown, daemon=True).start()
+    threading.Thread(target=stop, daemon=True).start()
     return
 ...
 srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
@@ -69,14 +74,20 @@ Rationale for the ordering: `shutdown()` blocks until the `serve_forever` loop
 exits, so calling it inline would race the response write. Writing the body
 first guarantees the browser sees a clean 200 before the socket goes away.
 
+`server_close()` belongs to the same teardown rather than to `main()`: without
+it the listening socket stays open, the port stays claimed, and the next request
+hangs in the accept backlog instead of failing fast — a distinction the caller
+cannot make. Putting it in `stop()` makes the endpoint fully self-contained, so
+the teardown is identical whether the loop is being run by `main()` or by a test.
+
 `ThreadingHTTPServer` sets `daemon_threads = True`, so the two long-lived SSE
 handlers (`studio/server.py:134`, `:148`) do not block `shutdown()` and do not
 keep the process alive once `main()` returns.
 
-`main()` gains `srv.server_close()` after `serve_forever()` returns, on both the
-button path and the existing `KeyboardInterrupt` path, so the port is released
-immediately instead of at interpreter exit. It also prints a final
-`Studio stopped.` line so the terminal shows why it came back to the prompt.
+`main()` also calls `srv.server_close()` after `serve_forever()` returns — the
+`KeyboardInterrupt` path needs it, and it is idempotent when the button path
+already ran. It then prints `Studio stopped.` so the terminal shows why it came
+back to the prompt.
 
 **Rejected alternatives.** A `threading.Event` that `main()` waits on while
 `serve_forever` runs in a side thread costs `make_server` its self-containment

@@ -1,5 +1,6 @@
 import json
 import textwrap
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -193,3 +194,45 @@ def test_studio_stream_replays_outbox(live_server, tmp_path):
                 assert '"text":"hi"' in line or '"text": "hi"' in line
                 return
     assert False, "no data event received"
+
+
+# The shutdown endpoint kills the server it is served by, so these tests own the
+# serve_forever thread rather than borrowing the fixture's (which yields only a URL).
+def test_shutdown_answers_then_stops_serving(tmp_path):
+    srv = make_server(tmp_path, memory_scripts=None, port=0)
+    loop = Thread(target=srv.serve_forever, daemon=True)
+    loop.start()
+    base = "http://127.0.0.1:%d" % srv.server_address[1]
+    try:
+        # The response must land before the socket goes away — a browser that
+        # never sees the 200 cannot tell "stopped" from "endpoint is missing".
+        status, body = _post(base, "/api/shutdown", {})
+        assert status == 200 and body["ok"] is True
+        loop.join(timeout=5)
+        assert not loop.is_alive(), "serve_forever still running after /api/shutdown"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_shutdown_releases_the_port(tmp_path):
+    """The listening socket must be closed too, not just the accept loop — an
+    open socket keeps the port claimed and leaves the next request hanging in
+    the backlog instead of failing fast."""
+    srv = make_server(tmp_path, memory_scripts=None, port=0)
+    Thread(target=srv.serve_forever, daemon=True).start()
+    base = "http://127.0.0.1:%d" % srv.server_address[1]
+    try:
+        _post(base, "/api/shutdown", {})
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                _get(base, "/api/config")
+            except urllib.error.URLError:
+                return
+            except OSError:
+                return
+            time.sleep(0.1)
+        assert False, "port still accepting requests after /api/shutdown"
+    finally:
+        srv.server_close()

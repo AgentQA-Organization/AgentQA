@@ -512,8 +512,11 @@ function dispatch(rec) {
   if (rec.type === "error") return appendError(rec);
 }
 
+let agentStream = null;
+
 function connectStream() {
   const es = new EventSource("/api/studio/stream");
+  agentStream = es;
   es.onmessage = (e) => {
     let rec;
     try { rec = JSON.parse(e.data); } catch (_) { return; }
@@ -597,5 +600,62 @@ async function startJob() {
 document.getElementById("job-start").onclick = startJob;
 document.getElementById("job-idea").addEventListener("keydown", (e) => { if (e.key === "Enter") startJob(); });
 pollAgentState();
-setInterval(pollAgentState, 4000);
+let agentPoll = setInterval(pollAgentState, 4000);
 connectStream();
+
+// ---- Stop the daemon ----------------------------------------------------
+// Pure: what the confirm dialog owes the user before the daemon dies. Stopping
+// Studio only stops the browser bridge — the agent talks to the mailbox files
+// directly and a pytest run is its own child process, so both outlive the
+// server with nobody left watching them. `attached` is what says an agent is
+// home; a stale state.json can read "running" long after one walked away.
+function shutdownWarnings(state, runActive) {
+  const out = [];
+  const agent = state && state.attached;
+  if (agent && state.status === "running") {
+    out.push("The agent is running a job — it keeps going in Claude Code.");
+  }
+  if (agent && state.status === "waiting") {
+    out.push("The agent is waiting on your answer — you won't be able to answer once Studio stops.");
+  }
+  if (runActive) {
+    out.push("A pytest run is streaming — the test process is left running.");
+  }
+  return out;
+}
+
+async function openStopDialog() {
+  let state = {};
+  // Fresh, not the 4s poll's last value. A state we cannot read is no reason to
+  // stand between the user and their own stop button — warn about nothing.
+  try { state = await fetchJSON("/api/studio/state"); } catch (err) { state = {}; }
+  const box = document.getElementById("stop-warnings");
+  box.innerHTML = "";
+  for (const w of shutdownWarnings(state, activeRun !== null)) {
+    box.appendChild(el(`<div class="dlg-warn">${esc(w)}</div>`));
+  }
+  document.getElementById("stop-dialog").showModal();
+}
+
+async function stopServer() {
+  try {
+    await fetchJSON("/api/shutdown", { method: "POST" });
+  } catch (err) {
+    // The connection dropping as the socket dies is this request's normal
+    // shape, not a failure — the button said stop, so report stopped.
+  }
+  if (activeRun) { activeRun.close(); activeRun = null; }
+  if (agentStream) { agentStream.close(); agentStream = null; }
+  // Otherwise the tab reconnects to a dead server forever and floods the console.
+  clearInterval(agentPoll);
+  document.body.appendChild(el(
+    `<div class="stopped"><div class="stopped-card">` +
+    `<div class="stopped-title">Studio stopped</div>` +
+    `<div class="stopped-hint">Run <code>agentqa-studio</code> to start it again.</div>` +
+    `</div></div>`));
+}
+
+document.getElementById("stop-server").onclick = openStopDialog;
+document.getElementById("stop-dialog").addEventListener("close", function () {
+  if (this.returnValue === "stop") stopServer();
+});
