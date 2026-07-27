@@ -56,8 +56,12 @@ land in *their* transcript. Say one line to the user, that a newer
 
 Claude Code's own permission dialogs are bridged separately, by a plugin hook
 rather than by you: when a write needs approval it becomes a Permission card in
-the same conversation. You do nothing to make that happen, and a rejection comes
-back to you as an ordinary tool rejection carrying the tester's reason.
+the same conversation. You do nothing to make that happen. A reject denies the
+tool call — that part is Claude Code's documented behavior — and the tester's
+note is meant to reach you as the rejection reason; whether that delivery
+actually works hasn't been confirmed, so treat a bare "the user doesn't want to
+proceed" as possible even after a reason was given, and don't assume silence
+means no reason was offered.
 
 ## Prerequisites
 

@@ -231,6 +231,25 @@ Init must **merge** into any existing file. `test-auto-mytv` already has an
 `enabledPlugins` key in `settings.json` and an unrelated `settings.local.json`;
 neither may be clobbered.
 
+### Threat model note: the allowlist covers the approval channel itself
+
+`Edit(/.agentqa/**)` covers `.agentqa/studio/inbox.jsonl`, which now carries the
+tester's approve/reject decisions — so the channel the Permission card's answer
+travels over is writable, without a prompt, by the very agent whose writes it is
+supposed to gate. An agent that wanted to self-approve could append a forged
+`reply` record with `"decision": "approve"` straight to the inbox.
+
+Not exploitable in-band today: the agent is suspended inside the blocked tool
+call for the entire time the hook is waiting, so nothing it controls is running
+to write that record, and the question id the reply must carry
+(`reply_to`) only ever exists on the hook's own captured stdout — the agent
+never sees it. But this is a property of the current call graph, not something
+the allowlist itself enforces, and a **deny** rule on the inbox would not close
+it either, because `Bash` is unrestricted and a shell command can write any file
+`Edit` is blocked from. Recorded here so the next person who widens the
+allowlist (or adds a way for the agent to run code between posting and waiting)
+sees the assumption they'd be breaking.
+
 ## Testing strategy
 
 The hook's decision is extracted as a pure function over (state, reply) so it can

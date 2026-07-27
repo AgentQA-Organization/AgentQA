@@ -74,7 +74,7 @@ any device prompts, become cards instead of terminal questions:
 |---|---|
 | **Clarify** | every test — confirm what *success*, *failure*, and *blockers* look like (pre-filled from your product docs when available) |
 | **System dialog** | when the phone raises a permission prompt, OTP, or springboard pop-up during exploration (Allow / Deny / Dismiss) |
-| **Permission** | when Claude Code would otherwise raise a permission dialog in the terminal — approve or reject the write, with a note the agent receives |
+| **Permission** | when Claude Code would otherwise raise a permission dialog in the terminal — approve allows the write; reject denies it (Claude Code's documented behavior for this hook). Your note is meant to reach the agent as the denial reason; whether it actually does hasn't been confirmed yet |
 | **Build** | only when `build.policy: human` — "I've built & installed" after you build the app-code changes |
 | **Review** | every test — approve or reject the additions-only diff and the generated test |
 
@@ -84,6 +84,12 @@ Review card already shows you their diff before anything is kept. Everything els
 — app source, or any path outside those two — raises a Permission card. If no
 agent is attached to Studio, nothing changes: the prompt appears in the terminal
 exactly as before.
+
+**Repo initialised before this allowlist existed?** Re-run
+`skills/agentqa-init/scripts/scaffold-permissions.sh` (or just `/agentqa-init init`
+again) to add it — it merges into your existing `.claude/settings.json` and is
+safe to re-run. Without it, every AgentQA write raises a Permission card, which
+is exactly what the allowlist exists to prevent.
 
 ---
 
@@ -154,13 +160,16 @@ stopping the daemon **only stops the browser bridge**:
    (`map → clarify → explore → identifiers → build → verify → write → green →
    review → capture`).
 4. A **Clarify** card appears — confirm success / failure / blockers → **Submit**.
-5. If a permission prompt shows up during exploration, an **ask** card asks how to
-   handle it.
-6. Under `build.policy: human`, a **Build** card waits for you to build & install
+5. If the phone raises a permission prompt, OTP, or springboard pop-up during
+   exploration, a **System dialog** card asks how to handle it.
+6. If the agent needs to write somewhere the allowlist doesn't cover — app
+   source, most often, to add an accessibility identifier — a **Permission**
+   card asks you to approve or reject the write.
+7. Under `build.policy: human`, a **Build** card waits for you to build & install
    the app-code changes → **"I've built & installed."**
-7. A **Review** card shows the additions-only diff and the generated test →
+8. A **Review** card shows the additions-only diff and the generated test →
    **Approve** (or **Reject** with a note).
-8. A green **result** links the test file. The agent goes back to waiting.
+9. A green **result** links the test file. The agent goes back to waiting.
 
 ---
 
