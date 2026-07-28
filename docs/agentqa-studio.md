@@ -145,8 +145,11 @@ stopping the daemon **only stops the browser bridge**:
 - **An in-flight `pytest` run keeps running.** It is a child process; stopping the
   daemon just stops watching its output.
 
-> The command is installed on your `PATH` by `/agentqa-init setup` (a symlink in
-> `~/.local/bin`). Set `AGENTQA_STUDIO_PORT` to use a port other than `7332`.
+> Nothing installs `agentqa-studio` onto your `PATH` automatically yet — do it once,
+> by hand: on macOS/Linux, `ln -sf "$(pwd)/bin/agentqa-studio" ~/.local/bin/agentqa-studio`
+> (and make sure `~/.local/bin` is on `PATH`); on Windows, copy or link
+> `bin\agentqa-studio.cmd` into a folder already on your `PATH`. Set
+> `AGENTQA_STUDIO_PORT` to use a port other than `7332`.
 
 ---
 

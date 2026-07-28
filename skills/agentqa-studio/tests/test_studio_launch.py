@@ -169,3 +169,10 @@ def test_main_port_defaults_to_env_var(monkeypatch, tmp_path):
     monkeypatch.setattr(launch.subprocess, "run", fake_run)
     launch.main([str(tmp_path), "--foreground"])
     assert "9999" in captured["argv"]
+
+
+def test_windows_cmd_shim_delegates_to_studio_launch_foreground():
+    cmd_path = SCRIPTS.parent.parent.parent / "bin" / "agentqa-studio.cmd"
+    text = cmd_path.read_text()
+    assert "studio-launch.py" in text
+    assert "--foreground" in text
