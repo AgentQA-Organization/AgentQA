@@ -95,7 +95,7 @@ Step 1 installs the [toolchain](toolchain.md); step 2 writes
 
 ## Versioning
 
-Releases are git-tagged with SemVer (`v1.3.1`). The plugin version lives in
+Releases are git-tagged with SemVer (`v1.3.2`). The plugin version lives in
 [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json), and each skill
 carries its own in its `SKILL.md` frontmatter (`metadata.agentqa-init-version`,
 `metadata.agentqa-write-test-version`, `metadata.agentqa-studio-version`). Pin the
