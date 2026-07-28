@@ -225,6 +225,16 @@ def test_resolve_repo_falls_back_to_input_outside_git(tmp_path):
     assert launch.resolve_repo(str(tmp_path)) == str(tmp_path)
 
 
+def test_resolve_repo_falls_back_on_non_oserror_exception(monkeypatch, tmp_path):
+    # e.g. UnicodeDecodeError decoding git's stdout for a non-UTF-8-encoded
+    # repo path -- not an OSError, so it must still be swallowed here rather
+    # than crashing main()'s default "always exit 0" mode.
+    def _boom(*a, **k):
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid byte")
+    monkeypatch.setattr(launch.subprocess, "run", _boom)
+    assert launch.resolve_repo(str(tmp_path)) == str(tmp_path)
+
+
 def test_run_foreground_returns_130_on_keyboard_interrupt(monkeypatch):
     def _interrupt(*a, **k):
         raise KeyboardInterrupt

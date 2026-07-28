@@ -55,7 +55,7 @@ def resolve_repo(repo):
         result = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
             capture_output=True, text=True)
-    except OSError:
+    except Exception:
         return str(repo)
     if result.returncode == 0:
         return result.stdout.strip()
