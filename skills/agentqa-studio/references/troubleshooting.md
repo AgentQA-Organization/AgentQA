@@ -36,8 +36,9 @@ tell the user in one line so a disappearing run is never a mystery.
 ## The viewer never came up
 
 Booting the daemon is best-effort and the mailbox files are the source of truth, so
-the job still runs. Never abort a run because the daemon failed to start. The
-launcher log is at `/tmp/agentqa-studio.log`.
+the job still runs. Never abort a run because the daemon failed to start.
+`studio-launch.py` prints where it wrote the launcher log (a temp-dir path,
+platform-dependent) in its status line — check there.
 
 ## Design rationale
 
