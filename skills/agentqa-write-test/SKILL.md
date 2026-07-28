@@ -4,7 +4,7 @@ description: Turn a natural-language test-case idea into a reviewed, passing App
 license: MIT
 compatibility: iOS (macOS + Xcode + a simulator) or Android (Android SDK + an emulator/device + a JDK); needs the toolchain from /agentqa-init setup and a project configured by /agentqa-init init
 metadata:
-  agentqa-write-test-version: "1.3.2"
+  agentqa-write-test-version: "1.3.5"
 ---
 
 # agentqa-write-test — idea → identifiers → Appium test
@@ -63,10 +63,33 @@ the test will. It reads `platform:` and wipes the right way (`simctl` container 
 iOS, `adb shell pm clear` on Android). `never` → don't reset, and expect state
 carried over from earlier runs.
 
+That script lives in the **`agentqa-init` skill's own directory**, not this
+repo — `agentqa-init` and `agentqa-write-test` are always installed as
+siblings under the same `skills/` parent, so resolve it relative to *this*
+skill's own base directory (the one you were given when this skill loaded):
+`<this skill's base directory>/../agentqa-init/scripts/reset-app-data.sh`. A
+bare `scripts/reset-app-data.sh` will not resolve from the host repo's cwd —
+don't guess a path; if the sibling directory genuinely isn't there, say so
+rather than silently skipping the wipe.
+
 Behavioral knowledge lives in `.agentqa/memory/` — schema:
 [references/memory-model.md](references/memory-model.md).
 
 ## The Flow
+
+Five of these steps cause real damage when skipped under load, so they're
+stated again at the point they apply, not just here — if a long file makes you
+lose track of everything else, keep these:
+
+- **Wipe app data before the first `agent-device open`** (step 3), whenever
+  `reset_app_data: always`. It is a separate call, not something `open` does.
+- **No Appium anywhere in step 3** — only `agent-device`. Appium starts at step 6.
+- **Step 5's build checkpoint (`build.policy: human`) ends your turn.** A reply
+  to the build question is not proof a build happened; step 6's hierarchy check is.
+- **Memory writes go through `scripts/memory-write.py`** — never a direct edit
+  or append to a note file.
+- **Delete both Working-layer files at step 9**, or the moment a session ends
+  unfinished — they must never carry into the next run.
 
 0. **Index, then map to code** — run `codegraph init` **first** (idempotent: it
    builds the index, or refreshes a stale one), then `codegraph explore "…"` for
@@ -140,12 +163,23 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
    the live hierarchy, and it is your source of truth; code reading lies.
    Never spawn a sub-agent for this either.
 
-   Drive the CLI directly: `agent-device open <app_id>` — the app id is the
-   `bundle_id` (iOS) or `app_package` (Android) from the config; add
-   `--platform android` on Android so agent-device selects the right target. (When
-   `reset_app_data: always` in `config.yml`, wipe first with `agentqa-init`'s
-   `scripts/reset-app-data.sh`, so exploration starts where the tests will) →
-   `agent-device snapshot -i` → `agent-device press`/`fill <id> --settle`. Do the
+   **Your first two commands in this step, in this order, whenever
+   `reset_app_data: always` in `config.yml` (the default):**
+   ```bash
+   <agentqa-init's base directory>/scripts/reset-app-data.sh   # 1. wipe
+   agent-device open <app_id>                                  # 2. then open
+   ```
+   The wipe script is **not** in this repo — see "Reset policy" above for how
+   to resolve `agentqa-init`'s base directory from this skill's own. `<app_id>`
+   is the `bundle_id` (iOS) or `app_package` (Android) from the config; add
+   `--platform android` on Android so `agent-device` selects the right target.
+   Skip the wipe and you explore whatever state an earlier run
+   left behind; every note you write afterward inherits the wrong starting
+   screen, and the identifiers/assertions you capture won't match what the
+   actual test (which does reset) will see.
+
+   From there: `agent-device snapshot -i` → `agent-device press`/`fill <id>
+   --settle`. Do the
    **verify-delta** pass: use the flow note — and whatever the step-0 artifacts
    claim about this flow — as your map, confirm each known waypoint against live
    state, deep-dive only where reality diverges. A spec is a claim exactly like a
@@ -187,6 +221,21 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
    is textual, so it catches restatements and misses the same fact worded
    differently. Full schema:
    [references/memory-model.md](references/memory-model.md).
+
+   One observation, worked through both verbs:
+   ```bash
+   python3 scripts/memory-write.py propose --memory-dir .agentqa/memory \
+     --note screens/login.md --category identifier \
+     --text "login_submit_button → LoginView.btnLogin; added-unverified 2026-07-28 #login"
+   # read what it printed, then:
+   python3 scripts/memory-write.py apply --memory-dir .agentqa/memory \
+     --op ADD --note screens/login.md --category identifier \
+     --text "login_submit_button → LoginView.btnLogin; added-unverified 2026-07-28 #login"
+   ```
+   A hand-written line or a raw append is not this — it skips the dedup check
+   `propose` exists to run, and afterward there is no way to tell it apart from an
+   observation that went through the script properly. If `apply` refuses a write,
+   fix the input rather than editing the note directly.
    - `flows/<flow>.md`: `[flow-step]` nav path, `[assertion]`, `[edge-case]`s,
      `[native]`/`[web]` per step.
    - `screens/<screen>.md` per screen: `[native]`/`[web]`, `[quirk]`s, and any
@@ -223,10 +272,26 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
    `added-unverified` identifiers from step 4, the assertion from step 2, and
    `Blocker: WAITING_FOR_HUMAN_BUILD` (the failure criteria and blockers stay in
    `.session-requirement.md`, which survives the pause too — don't re-ask for
-   them). Then per `build.policy`: `human` → stop and
-   ask the user to build & install onto the booted simulator, then continue;
-   `agent` → build yourself. The checkpoint lets step 6 resume after a context
-   break instead of re-clarifying and re-exploring.
+   them). Then per `build.policy`: `agent` → build yourself and go straight into
+   step 6; `human` → ask the user to build & install onto the booted simulator.
+   The checkpoint lets step 6 resume after a context break instead of
+   re-clarifying and re-exploring.
+
+   **The only two actions allowed after asking, in this exact order, no matter
+   what the reply says:**
+   ```
+   1. STOP. Emit no further tool calls this turn — no re-opening the app, no
+      AutomationTests/*.py file, no pytest.
+   2. Next turn: run step 6's `page_source` grep for the new identifiers, and
+      only that. Its result — not the reply to your question — is what tells
+      you whether a build actually happened.
+   ```
+   A reply that arrives instantly, or simply says "done, go ahead," is not
+   evidence — a real rebuild takes real minutes. If step 6's grep doesn't find
+   the new identifiers, the build hasn't landed regardless of what you were
+   told, and the correct action is to ask again and keep waiting, not to
+   proceed. Resuming later costs nothing; testing against a stale build wastes
+   the run and reports results that aren't real.
 6. **Verify identifiers in the live hierarchy** — resume from
    `.agentqa/memory/.run-checkpoint.md` (don't re-ask the human or re-explore); pull
    Appium `page_source` (via the Appium MCP if present, else shell out) and grep
@@ -360,6 +425,7 @@ pass; if it doesn't, escalate as possibly-real and stop.**
 | "The requirements are in my context, no need for the temp note" | Context breaks (the build pause is one). The note is what steps 3–8 check themselves against — and it's deleted when the session ends. |
 | "There's already a CodeGraph index, skip `codegraph init`" | It's idempotent and cheap next to a stale map. Init, explore, read source — in that order, before the simulator. |
 | "I'll just build the app myself quickly" | If build.policy is human, there's a reason (slow builds, signing). Hand off. |
+| "The build reply came back right away, so it must already be done" | A real build takes real minutes. An instant or confident-sounding reply isn't proof — step 6's hierarchy check is. Keep waiting until that confirms it. |
 | "The code shows this screen, I can write the test from it" | A real build replaced native login with web SSO. Only the live hierarchy is truth. |
 | "The screenshot shows the keyboard, so tap its Go key" | Appium types without the keyboard up; the page's own submit button sat under it. Trust the live hierarchy over screenshots. |
 | "The locator fails, I'll match by fuzzy label" | If your identifier is missing, fix its placement in app code, not the locator. |
@@ -386,6 +452,8 @@ pass; if it doesn't, escalate as possibly-real and stop.**
 - Exploring before `codegraph init` finished and the source was read
 - Any Appium call during step 3 — session, MCP `page_source`, or script
 - Building the app when `build.policy: human`
+- Treating a reply to the build question as proof a build happened, without
+  step 6's hierarchy check confirming it
 - A `.py`/pytest file created before step 7 (exploring should be `agent-device` calls, not a script)
 - Writing a test while any part of the flow, its failure path, or a named blocker
   is still unobserved
