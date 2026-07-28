@@ -50,6 +50,18 @@ def port_open(port, host="127.0.0.1"):
         return s.connect_ex((host, port)) == 0
 
 
+def resolve_repo(repo):
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True)
+    except OSError:
+        return str(repo)
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return str(repo)
+
+
 def find_memory_scripts(repo, studio_root=STUDIO_ROOT):
     for cand in (
         studio_root / "skills" / "agentqa-write-test" / "scripts",
@@ -98,28 +110,45 @@ def launch_detached(repo, port, memory_scripts):
 
 
 def run_foreground(repo, port, memory_scripts):
-    return subprocess.run(server_argv(repo, port, memory_scripts), env=_env()).returncode
+    try:
+        return subprocess.run(server_argv(repo, port, memory_scripts), env=_env()).returncode
+    except KeyboardInterrupt:
+        return 130
+
+
+def _default_port():
+    raw = os.environ.get("AGENTQA_STUDIO_PORT")
+    if not raw:
+        return DEFAULT_PORT
+    try:
+        return int(raw)
+    except ValueError:
+        return DEFAULT_PORT
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="studio-launch.py")
     ap.add_argument("repo")
-    ap.add_argument("--port", type=int,
-                     default=int(os.environ.get("AGENTQA_STUDIO_PORT", DEFAULT_PORT)))
+    ap.add_argument("--port", type=int, default=_default_port())
     ap.add_argument("--memory-scripts", dest="memory_scripts", default=None)
     ap.add_argument("--foreground", action="store_true")
     args = ap.parse_args(argv)
-
-    memory_scripts = Path(args.memory_scripts) if args.memory_scripts \
-        else find_memory_scripts(args.repo)
+    args.repo = resolve_repo(args.repo)
 
     if args.foreground:
+        memory_scripts = Path(args.memory_scripts) if args.memory_scripts \
+            else find_memory_scripts(args.repo)
         return run_foreground(args.repo, args.port, memory_scripts)
 
-    if port_open(args.port):
-        print("already-running")
-        return 0
-    print(launch_detached(args.repo, args.port, memory_scripts))
+    try:
+        memory_scripts = Path(args.memory_scripts) if args.memory_scripts \
+            else find_memory_scripts(args.repo)
+        if port_open(args.port):
+            print("already-running")
+        else:
+            print(launch_detached(args.repo, args.port, memory_scripts))
+    except Exception as exc:
+        print("not-started (%s)" % exc)
     return 0
 
 

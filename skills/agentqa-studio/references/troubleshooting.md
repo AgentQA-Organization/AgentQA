@@ -36,9 +36,10 @@ tell the user in one line so a disappearing run is never a mystery.
 ## The viewer never came up
 
 Booting the daemon is best-effort and the mailbox files are the source of truth, so
-the job still runs. Never abort a run because the daemon failed to start.
-`studio-launch.py` prints where it wrote the launcher log (a temp-dir path,
-platform-dependent) in its status line — check there.
+the job still runs. Never abort a run because the daemon failed to start. The
+launcher log is `agentqa-studio.log` in your system temp directory (`%TEMP%` on
+Windows, `$TMPDIR` or `/tmp` on macOS/Linux) — `studio-launch.py` names that exact
+path if its status line reports the port didn't come up in time.
 
 ## Design rationale
 

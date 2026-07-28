@@ -120,6 +120,11 @@ def test_main_already_running_does_not_spawn(monkeypatch, tmp_path, capsys):
     try:
         port = s.getsockname()[1]
 
+        # resolve_repo shells out to git via subprocess.run, which itself uses
+        # Popen -- stub it so this test's Popen tripwire only fires for the
+        # thing it's actually guarding (launch_detached's spawn).
+        monkeypatch.setattr(launch, "resolve_repo", lambda repo: repo)
+
         def _boom(*a, **k):
             raise AssertionError("Popen must not be called when the port is already open")
         monkeypatch.setattr(launch.subprocess, "Popen", _boom)
@@ -138,6 +143,9 @@ def test_main_foreground_runs_server_in_foreground(monkeypatch, tmp_path):
     # doesn't depend on `repo` at all -- stub it so this test's expected argv
     # doesn't depend on incidental repo state.
     monkeypatch.setattr(launch, "find_memory_scripts", lambda repo, studio_root=launch.STUDIO_ROOT: None)
+    # resolve_repo also calls subprocess.run (for git) -- stub it so the
+    # fake_run below only ever sees the server_argv call this test checks.
+    monkeypatch.setattr(launch, "resolve_repo", lambda repo: repo)
     captured = {}
 
     class FakeCompleted:
@@ -156,6 +164,9 @@ def test_main_foreground_runs_server_in_foreground(monkeypatch, tmp_path):
 
 def test_main_port_defaults_to_env_var(monkeypatch, tmp_path):
     monkeypatch.setattr(launch, "find_memory_scripts", lambda repo, studio_root=launch.STUDIO_ROOT: None)
+    # resolve_repo also calls subprocess.run (for git) -- stub it so the
+    # fake_run below only ever sees the server_argv call this test checks.
+    monkeypatch.setattr(launch, "resolve_repo", lambda repo: repo)
     monkeypatch.setenv("AGENTQA_STUDIO_PORT", "9999")
     captured = {}
 
@@ -176,3 +187,46 @@ def test_windows_cmd_shim_delegates_to_studio_launch_foreground():
     text = cmd_path.read_text()
     assert "studio-launch.py" in text
     assert "--foreground" in text
+
+
+def test_main_default_mode_never_raises_on_internal_exception(monkeypatch, tmp_path, capsys):
+    s = None
+    monkeypatch.setattr(launch, "find_memory_scripts", lambda repo, studio_root=launch.STUDIO_ROOT: None)
+
+    def _boom(*a, **k):
+        raise OSError("permission denied")
+    monkeypatch.setattr(launch, "port_open", lambda port, host="127.0.0.1": False)
+    monkeypatch.setattr(launch, "launch_detached", _boom)
+
+    rc = launch.main([str(tmp_path)])
+    assert rc == 0
+    assert "not-started" in capsys.readouterr().out
+
+
+def test_default_port_falls_back_when_env_var_is_invalid(monkeypatch):
+    monkeypatch.setenv("AGENTQA_STUDIO_PORT", "not-a-number")
+    assert launch._default_port() == launch.DEFAULT_PORT
+
+
+def test_default_port_falls_back_when_env_var_is_empty(monkeypatch):
+    monkeypatch.setenv("AGENTQA_STUDIO_PORT", "")
+    assert launch._default_port() == launch.DEFAULT_PORT
+
+
+def test_resolve_repo_returns_git_toplevel(tmp_path):
+    import subprocess as sp
+    sp.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    nested = tmp_path / "sub" / "dir"
+    nested.mkdir(parents=True)
+    assert launch.resolve_repo(str(nested)) == str(tmp_path.resolve())
+
+
+def test_resolve_repo_falls_back_to_input_outside_git(tmp_path):
+    assert launch.resolve_repo(str(tmp_path)) == str(tmp_path)
+
+
+def test_run_foreground_returns_130_on_keyboard_interrupt(monkeypatch):
+    def _interrupt(*a, **k):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(launch.subprocess, "run", _interrupt)
+    assert launch.run_foreground("/repo", 7332, None) == 130

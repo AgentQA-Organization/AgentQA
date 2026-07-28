@@ -4,7 +4,7 @@ description: Attach a live agent to the AgentQA Studio dashboard so a mobile UI 
 license: MIT
 compatibility: Same toolchain as agentqa-write-test — a repo configured by /agentqa-init init (.agentqa/config.yml plus a scaffolded .agentqa/memory/). The Studio daemon is the repo-root `studio/` package shipped with this plugin.
 metadata:
-  agentqa-studio-version: "1.2.0"
+  agentqa-studio-version: "1.3.0"
 ---
 
 # agentqa-studio — drive test-writing from the browser
