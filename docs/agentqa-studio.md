@@ -251,5 +251,7 @@ wall of terminal output.
   adapter; the flow, its memory, and its green loop are exactly the terminal ones.
 - **"No agent connected"** in the Agent panel just means no `/agentqa-studio`
   session is attached — run it in Claude Code at the repo.
-- **Design deep-dive:** the architecture, the protocol, and the reasoning are in
-  [`docs/superpowers/specs/2026-07-25-agentqa-studio-m2-agent-bridge-design.md`](superpowers/specs/2026-07-25-agentqa-studio-m2-agent-bridge-design.md).
+- **Design deep-dive:** the architecture, protocol, and reasoning behind the agent
+  bridge are kept as internal design history in the AgentQA-Workspace repo
+  (`docs/superpowers/specs/2026-07-25-agentqa-studio-m2-agent-bridge-design.md`),
+  not shipped with the plugin.
