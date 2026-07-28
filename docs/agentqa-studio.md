@@ -145,8 +145,15 @@ stopping the daemon **only stops the browser bridge**:
 - **An in-flight `pytest` run keeps running.** It is a child process; stopping the
   daemon just stops watching its output.
 
-> The command is installed on your `PATH` by `/agentqa-init setup` (a symlink in
-> `~/.local/bin`). Set `AGENTQA_STUDIO_PORT` to use a port other than `7332`.
+> Nothing installs `agentqa-studio` onto your `PATH` automatically yet — do it once,
+> by hand: on macOS/Linux, `ln -sf "$(pwd)/bin/agentqa-studio" ~/.local/bin/agentqa-studio`
+> (and make sure `~/.local/bin` is on `PATH`); on Windows, add this repo's `bin\`
+> folder itself to your `PATH` (the shim locates the rest of the repo relative to
+> its own location, so it can't be copied elsewhere). Set `AGENTQA_STUDIO_PORT` to
+> use a port other than `7332`.
+>
+> On Windows, the dashboard itself runs natively — the write-test flow it drives
+> still needs the Appium/iOS/Android toolchain, which is macOS/Linux-only.
 
 ---
 

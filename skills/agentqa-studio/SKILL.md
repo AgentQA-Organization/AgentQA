@@ -4,7 +4,7 @@ description: Attach a live agent to the AgentQA Studio dashboard so a mobile UI 
 license: MIT
 compatibility: Same toolchain as agentqa-write-test — a repo configured by /agentqa-init init (.agentqa/config.yml plus a scaffolded .agentqa/memory/). The Studio daemon is the repo-root `studio/` package shipped with this plugin.
 metadata:
-  agentqa-studio-version: "1.2.0"
+  agentqa-studio-version: "1.3.0"
 ---
 
 # agentqa-studio — drive test-writing from the browser
@@ -80,9 +80,7 @@ never comes up. Never abort a run because the daemon failed to start.
 ```bash
 # App repos need not be git repos — fall back to cwd, exactly like the launcher does.
 REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-if ! nc -z 127.0.0.1 7332 2>/dev/null; then
-  agentqa-studio >/tmp/agentqa-studio.log 2>&1 &   # M1 launcher; self-resolves the repo + opens a browser
-fi
+python3 scripts/studio-launch.py "$REPO"   # best-effort; starts the daemon detached, opens a browser
 CONNECTOR="$(python3 scripts/studio-attach.py "$REPO")"
 echo "connector: $CONNECTOR"
 ```
