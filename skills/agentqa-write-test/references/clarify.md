@@ -1,6 +1,6 @@
 # Clarify — ask only what code and the app can't answer
 
-Used by the `agentqa-write-test` skill (step 2) and by `explore`. This **replaces open-ended
+Used by `agentqa-write-test` Phase 1 and by exploration. This **replaces open-ended
 brainstorming**: with the source code as a white-box tool and the live app as a
 black-box tool, almost everything is discoverable. The human's time is spent on
 the one thing neither can tell you — what "pass" means.
@@ -16,7 +16,7 @@ drip-feed one question per turn.
 
 **The one-round budget covers requirements, not discoveries.** Exploration will
 surface things nobody could have named in advance — a permission prompt, an
-unexpected paywall, a screen that contradicts memory. Step 3 *requires* you to
+unexpected paywall, a screen that contradicts memory. Phase 2 *requires* you to
 stop and ask when you hit those. That is an escalation, not a second clarify
 round, and it does not count against this rule. What the rule forbids is
 dribbling out requirement questions one at a time when you could have asked
@@ -57,10 +57,10 @@ telling the truth, not a flaky test.
 e.g. an OTP/2FA code the agent can't read, a permission prompt, a paywall,
 required backend/test data, a feature flag, a rate limit. Blockers are things
 that stop the run without the feature being broken. Each one named here must be
-observed live during exploration (step 3) and handled or declared out of scope
+observed live during exploration (Phase 2) and handled or declared out of scope
 before the test is written — a blocker you discover mid-run costs a rewrite.
 
-> **4. Which entry point should the test use?** — *only when step 0 found more
+> **4. Which entry point should the test use?** — *only when the Phase 1 map found more
 > than one*
 
 A flow is usually reachable from several places: login from the welcome screen,
@@ -113,9 +113,10 @@ contradicts it (then say so to the user). Anything still unconfirmed here when
 the session ends dies with this file — it never reaches `flows/` or `screens/`.>
 ```
 
-It is the Working-layer artifact steps 3–8 check themselves against — the
+It is the Working-layer artifact Phases 2–4 check themselves against — the
 answers survive a context break (the build pause), so nothing gets re-asked or
-quietly re-invented. Gitignored, never committed. **Delete it at step 9**, or
+quietly re-invented. Gitignored, never committed. Delete it through controller
+`finalize`/`abort`, or
 whenever the session ends without finishing; it describes one session's request
 and must never be recalled by the next.
 
@@ -157,8 +158,8 @@ accessibility gaps.
 - What validations exist?
 - How does navigation work?
 
-Each one has an answer in `codegraph explore` (step 0) or the live hierarchy
-`agent-device snapshot` shows you (step 3). Asking it tells the user you didn't
+Each one has an answer in Phase 1 `codegraph explore` or the Phase 2 live hierarchy
+`agent-device snapshot` shows you. Asking it tells the user you didn't
 look.
 
 ## Output of this step
@@ -169,15 +170,15 @@ look.
 - Environment / preconditions pinned.
 - All of it in `.agentqa/memory/.session-requirement.md`; the parts that outlive
   the session go to `flows/<flow>.md` at Capture, and the in-flight state to the
-  run checkpoint at step 5.
+  run checkpoint from controller initialization onward.
 
 ## Red flags
 
 - Asking anything on the never-ask list
 - Asking about success but not failure and blockers
-- Asking before step 0 (code map) and step 1 (recall) have run
+- Asking before the Phase 1 code map and scoped recall have run
 - More than one round of **requirement** questions for a single flow —
-  escalating a blocker or a memory divergence you hit live in step 3 is
+  escalating a blocker or a memory divergence you hit live in Phase 2 is
   expected, and never counts as a second round
 - Asking which entry point to use without first naming the ones you found
 - Starting to write a test with no confirmed one-sentence outcome

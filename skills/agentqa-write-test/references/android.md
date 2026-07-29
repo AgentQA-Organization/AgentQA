@@ -30,7 +30,7 @@ agent-device press <ref> --settle        # same inspect → act → settle loop
 If several devices are attached, `ANDROID_SERIAL=<serial>` picks one (both
 agent-device and the reset script honor it).
 
-## Reset (step 3 / conftest)
+## Reset (Phase 2 / conftest)
 
 `reset_app_data: always` → `adb shell pm clear <app_package>`: clears the app's
 data + cache **and revokes its runtime permissions**, keeping the APK installed
@@ -57,7 +57,7 @@ in setup (see System dialogs).
 - **`package=`** tells you whether a node belongs to your app or to the system —
   the key to spotting the permission dialog below.
 
-## Identifiers (step 4) — additive, the crux
+## Identifiers (Phase 3A) — additive, the crux
 
 The rule is identical to iOS: **add** an identifier, change nothing about
 behavior, layout, or logic, and `git diff --numstat` must show **0 deletions**.
@@ -93,7 +93,7 @@ accessibility-id locator, one page-object shape). Reach for **testTag →
 resource-id** when you must not alter the spoken a11y label, or when the screen is
 Compose and already uses testTags.
 
-## Verify in the live hierarchy (step 6)
+## Verify in the live hierarchy (Phase 3B)
 
 Pull `page_source` and grep for the new names:
 
@@ -102,9 +102,10 @@ Pull `page_source` and grep for the new names:
 
 Missing? Fix the placement (contentDescription/testTag on the right node; for
 testTag confirm `testTagsAsResourceId = true` is set at the root), then rebuild —
-back to step 5. Refresh the observation to `verified-in-hierarchy` on success.
+back to Phase 3A and its build checkpoint. Refresh the observation to
+`verified-in-hierarchy` on success.
 
-## Locators (step 7)
+## Locators (Phase 4)
 
 ```python
 from appium.webdriver.common.appiumby import AppiumBy
@@ -123,7 +124,7 @@ ALLOW    = (AppiumBy.XPATH, '//*[@text="Allow"]')
 Your identifiers for app-owned UI; visible-text only for what you don't own.
 Credentials still come only from the env-var names in the config.
 
-## System dialogs (step 3 + setup)
+## System dialogs (Phase 2 + test setup)
 
 The **runtime permission dialog** is owned by the permission-controller package
 (`com.google.android.permissioncontroller`, or `com.android.permissioncontroller`
@@ -149,7 +150,7 @@ Other outside-the-app surfaces to watch on each snapshot: ANR ("… isn't
 responding"), the "app keeps stopping" crash dialog, and system-update / battery
 prompts. Treat them like iOS pop-ups — stop and ask.
 
-## Build (checkpoint step 5)
+## Build (Phase 3 checkpoint)
 
 - `human` → ask the user to build & install (Android Studio, or
   `./gradlew :app:installDebug`); never run the build yourself.

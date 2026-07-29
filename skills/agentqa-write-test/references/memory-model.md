@@ -9,8 +9,8 @@ Memory persists **behavioral** knowledge the skill hand-earns at runtime — rea
 navigation paths, native-vs-web screens, verified identifier placements,
 phantom-failure signatures, build gotchas. It is NOT code knowledge (CodeGraph
 regenerates that). Creed: *code reading lies; only the live hierarchy is truth* —
-`agent-device snapshot` while exploring, Appium `page_source` once Appium is in
-play (step 6 onward).
+`agent-device snapshot` while exploring, Appium `page_source` once identifier
+verification begins (Phase 3 onward).
 
 The schema is **platform-neutral** — it holds for iOS and Android alike. An
 `[identifier]` records a logical name and where it's set; the *mechanism* behind
@@ -106,7 +106,7 @@ scratch.
 (`--days N` to change it), each with the `file:line` to pass straight to
 `memory-write.py --op UPDATE`. Age is a prompt to re-verify during exploration,
 not a reason to delete: the identifier is probably still there, but nobody has
-looked lately, and step 3 is walking those screens anyway.
+looked lately, and Phase 2 is walking those screens anyway.
 
 ## Validation
 
@@ -127,28 +127,35 @@ CI — the failure mode it prevents is a store that looks fine and answers nothi
 The `agentqa-write-test` skill maintains exactly two ephemeral files, both for the
 current session only (deliberately not a `sessions/<run-id>/` tree). Both are
 gitignored, never committed, invisible to `index.md`, `memory-write.py`, and
-`memory-lint.py`, and **deleted at step 9** — or whenever the session ends
+`memory-lint.py`, and deleted by controller `finalize`/`abort` — or whenever the session ends
 unfinished. They are session state, not knowledge: what deserves to persist is
 captured into `flows/`, `screens/`, and `failures/`.
 
 | File | Written | Holds |
 |---|---|---|
-| `.agentqa/memory/.session-requirement.md` | step 2 (clarify) | what the user asked for: request, **success**, **failure**, **blockers**, environment/preconditions — the contract steps 3–8 check themselves against |
-| `.agentqa/memory/.run-checkpoint.md` | step 5 (build pause) | in-flight run state so step 6 resumes after a context break instead of re-clarifying and re-exploring |
+| `.agentqa/memory/.session-requirement.md` | Phase 1 clarification | what the user asked for: request, **success**, **failure**, **blockers**, environment/preconditions — the later phases' contract |
+| `.agentqa/memory/.run-checkpoint.md` | controller initialization | JSON state for all five phases, validation tokens, artifacts, evidence, blocker, and exactly one next action |
 
 - Requirement note frontmatter: `title`, `type: session-requirement`, `updated`.
   Sections: `## Request`, `## Success`, `## Failure`, `## Blockers`,
   `## Environment / preconditions` (template in
   [clarify.md](clarify.md)).
-- Checkpoint frontmatter: `run_id`, `current_step`, `feature`, `updated`. Sections:
-  `## Added identifiers (awaiting build+verify)`, `## Hypothesis under test`,
-  `## Blocker` (e.g. `WAITING_FOR_HUMAN_BUILD`).
+- The checkpoint keeps the historical `.md` filename but its entire body is a
+  JSON object written only by `scripts/checkpoint.py` (stdlib; no PyYAML).
+  Canonical fields: `run_id`, `current_phase`, `phase_status`, `platform`,
+  `build_policy`, `reset_policy`, `flow_name`, `mode`, `code_map`, `artifacts`,
+  `completed_checks`, `blocker`, `failures_baseline`, `next_action`, and the
+  temporary `validated_phase` token. Do not hand-edit or duplicate artifact
+  paths outside `artifacts`.
+- `memory_common.py` filters dotfiles from persistent-note resolution, so the
+  JSON checkpoint remains invisible to `memory-index.py`, `memory-lint.py`, and
+  `memory-write.py` despite retaining a `.md` suffix.
 
 ## Intent layer — product artifacts (optional, read-only)
 
 Some teams already have SRDs, PM scenarios, user-flow docs, acceptance criteria.
 When `docs:` is set in `.agentqa/config.yml` (local paths/globs), those files are
-readable at step 0 and feed the clarify round. Many repos have none — the block is
+readable in Phase 1 and feed the clarify round. Many repos have none — the block is
 absent by default and everything below simply doesn't apply.
 
 **They are intent, not truth.** A spec says what the app was *meant* to do. It can
@@ -163,7 +170,7 @@ What they're for:
   the questions asked every run because only a human could answer them. A spec is a
   written answer — so propose it back for confirmation instead of asking cold. The
   user still decides; a doc never silently becomes the requirement.
-- **Aiming exploration.** A described flow is another map for the step-3
+- **Aiming exploration.** A described flow is another map for the Phase 2
   verify-delta pass — one more prior to confirm against live state, exactly like a
   recalled memory note.
 

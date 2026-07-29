@@ -1,6 +1,6 @@
 {
   "name": "agentqa",
-  "version": "1.3.2",
+  "version": "1.4.0+codex.write-test-small-model",
   "description": "Agent-driven mobile UI test automation with Appium, for iOS and Android — three skills: agentqa-init (toolchain + project setup), agentqa-write-test (idea to a green Appium test, with behavioral memory), and agentqa-studio (local web dashboard + connector to drive test-writing from the browser).",
   "author": {
     "name": "Nguyễn Anh Tuấn",
@@ -21,7 +21,6 @@
     "test-automation"
   ],
   "skills": "./skills/",
-  "hooks": {},
   "interface": {
     "displayName": "AgentQA",
     "shortDescription": "Set up, write, and run Appium UI tests for iOS and Android",

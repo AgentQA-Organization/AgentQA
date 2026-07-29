@@ -25,8 +25,11 @@ are fine — one checkout undoes the whole batch. Paths resolve under --memory-d
 """
 import argparse
 import difflib
+import json
+import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -209,7 +212,7 @@ def _guard_clean(args, op):
     The point of this guard is that a wrong edit is one revert away — and a
     committed baseline gives you that for the whole session, however many
     observations you refresh. Demanding a pristine tree before *every* write
-    made the common case impossible: step 6 refreshes every identifier it just
+    made the common case impossible: Phase 3 refreshes every identifier it just
     verified, and the first UPDATE would block the rest.
     """
     if args.force:
@@ -306,9 +309,23 @@ def _validate(args, parser):
             parser.error("--op DELETE requires --target")
 
 
+def _eval_log(argv):
+    """Emit structured evidence only inside the deterministic eval harness."""
+    state_dir = os.environ.get("AGENTQA_EVAL_STATE")
+    if not state_dir:
+        return
+    target = Path(state_dir) / "calls.jsonl"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    record = {"ts": time.time(), "tool": "memory-write", "argv": list(argv)}
+    with target.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 def main(argv=None):
+    raw = list(sys.argv[1:] if argv is None else argv)
+    _eval_log(raw)
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw)
     _validate(args, parser)
     return args.func(args)
 
