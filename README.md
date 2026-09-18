@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="AgentQA" width="1080">
+</p>
+
 # AgentQA — agent-driven mobile UI test automation skills
 
 Three [Agent Skills](https://agentskills.io) that let an AI coding agent **set up,
